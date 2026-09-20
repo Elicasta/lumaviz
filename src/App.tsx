@@ -90,11 +90,11 @@ export default function App() {
   const cleanupRef = useRef<null | (() => void | Promise<void>)>(null);
   const directRef = useRef<LumaRigConnection | null>(null);
   const lastFrameRef = useRef<FixtureFrame | null>(null);
-  const fixturesRef = useRef<FixtureDefinition[]>(fixtures);
 
   const [page, setPage] = useState<PageId>("visualize");
   const [dimensions, setDimensions] = useState<SceneDimensions>({ ...DEFAULT_DIMENSIONS });
   const [fixtures, setFixtures] = useState<FixtureDefinition[]>(cloneFixtures);
+  const fixturesRef = useRef<FixtureDefinition[]>(fixtures);
   const [material, setMaterial] = useState<MaterialPreset>("production-dark");
   const [units, setUnits] = useState<UnitSystem>("ft");
   const [activeView, setActiveView] = useState<ViewPreset>("foh");
