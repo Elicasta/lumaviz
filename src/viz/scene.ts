@@ -66,8 +66,7 @@ export class LumaVizScene {
 
     this.engine = new Engine(canvas, true, {
       preserveDrawingBuffer: true,
-      stencil: true,
-      antialias: true
+      stencil: true
     });
 
     this.scene = new Scene(this.engine);
