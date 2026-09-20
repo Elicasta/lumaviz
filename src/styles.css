@@ -979,3 +979,32 @@ select:focus {
 .full-width {
   width: 100%;
 }
+
+
+.camera-custom-label {
+  margin-top: 7px;
+  padding-inline: 2px;
+}
+
+.custom-camera-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  gap: 4px;
+}
+
+.custom-camera-row .camera-card {
+  width: 100%;
+}
+
+.camera-delete {
+  border: 1px solid #332b2d;
+  border-radius: 3px;
+  background: #151113;
+  color: #7f5d62;
+  cursor: pointer;
+}
+
+.camera-delete:hover {
+  color: #d28b94;
+  border-color: #56383d;
+}
