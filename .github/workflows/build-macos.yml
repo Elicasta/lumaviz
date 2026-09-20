@@ -17,6 +17,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
+          cache: npm
 
       - name: Set up Rust targets
         uses: dtolnay/rust-toolchain@stable
@@ -34,13 +35,43 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Build universal macOS app and DMG
+      - name: Confirm development signing mode
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const config = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+          const identity = config.bundle?.macOS?.signingIdentity;
+          if (identity !== '-') {
+            throw new Error('Development DMG must use explicit ad-hoc signingIdentity "-"');
+          }
+          console.log('macOS development signing identity:', identity);
+          NODE
+
+      - name: Build ad-hoc signed universal macOS app and DMG
         run: npm run tauri build -- --target universal-apple-darwin --bundles app,dmg
+
+      - name: Verify app bundle signature
+        run: |
+          APP_PATH="$(find src-tauri/target/universal-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)"
+          test -n "$APP_PATH" || (echo "No .app bundle found" && exit 1)
+          echo "Verifying: $APP_PATH"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          codesign -dv --verbose=4 "$APP_PATH" 2>&1 | tee /tmp/lumaviz-codesign.txt
+          grep -q "Signature=adhoc" /tmp/lumaviz-codesign.txt || {
+            echo "Expected an ad-hoc signed development build."
+            exit 1
+          }
+
+      - name: Inspect DMG
+        run: |
+          DMG_PATH="$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+          test -n "$DMG_PATH" || (echo "No DMG found" && exit 1)
+          hdiutil verify "$DMG_PATH"
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: LumaViz-macOS-universal
+          name: LumaViz-macOS-universal-ad-hoc
           if-no-files-found: error
           path: |
             src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
