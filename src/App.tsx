@@ -183,6 +183,11 @@ export default function App() {
     [fixtures]
   );
 
+  const selectedObject = useMemo(
+    () => objects.find((object) => object.id === selectedObjectId) ?? null,
+    [objects, selectedObjectId]
+  );
+
   async function cleanupConnection() {
     const cleanup = cleanupRef.current;
     cleanupRef.current = null;
@@ -512,13 +517,24 @@ export default function App() {
             <div className="tree">
               <TreeStatic icon="▱" label="Venue / Room" />
               <TreeStatic icon="▰" label="Stage" />
-              <TreeStatic icon="⌗" label="Truss A" />
-              <TreeStatic icon="⌗" label="Truss B" />
               <TreeStatic icon="▭" label="Projection Screen" />
               <TreeStatic icon="▥" label="Back Drape" />
-              <TreeStatic icon="◫" label="Production Objects" />
+
+              <div className="tree-section">
+                <div className="tree-label"><span>⌄</span> OBJECTS <small>{objects.length}</small></div>
+                {objects.map((object) => (
+                  <button
+                    key={object.id}
+                    className={"tree-row fixture-row " + (selectedObjectId === object.id ? "selected" : "")}
+                    onClick={() => setSelectedObjectId(object.id)}
+                  >
+                    <span>{object.kind === "truss" ? "⌗" : object.kind === "platform" ? "▰" : "◫"}</span>
+                    <span>{object.name}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-            <button className="add-object">＋ ADD OBJECT</button>
+            <button className="add-object" onClick={addBuildObject}>＋ ADD OBJECT</button>
           </aside>
 
           <Viewport
@@ -528,34 +544,106 @@ export default function App() {
           />
 
           <aside className="inspector-panel">
-            <PanelHeading title="DIMENSIONS" />
-            <section className="inspector-section">
-              <div className="eyebrow">REAL WORLD SCALE</div>
-              <h2>Venue + Stage</h2>
-              <p className="muted">Every object uses physical units. Dragging changes position, not the scale model.</p>
-            </section>
-            <section className="inspector-section dimension-grid">
-              {DIMENSION_FIELDS.map(([key, label]) => (
-                <label key={key}>
-                  <span>{label}</span>
-                  <div>
-                    <input
-                      value={displayDistance(dimensions[key], units)}
-                      onChange={(event) => updateDimension(key, event.target.value)}
-                    />
-                    <small>{units === "ft" ? "FT" : "M"}</small>
-                  </div>
-                </label>
-              ))}
-            </section>
-            <section className="inspector-section">
-              <h3>MATERIAL ENVIRONMENT</h3>
-              <select value={material} onChange={(event) => setMaterial(event.target.value as MaterialPreset)}>
-                <option value="production-dark">Production Dark</option>
-                <option value="ballroom">Ballroom</option>
-                <option value="black-box">Black Box</option>
-              </select>
-            </section>
+            <PanelHeading title={selectedObject ? "OBJECT" : "DIMENSIONS"} />
+
+            {selectedObject ? (
+              <>
+                <section className="inspector-section">
+                  <div className="eyebrow">SCENE OBJECT</div>
+                  <input
+                    value={selectedObject.name}
+                    onChange={(event) => updateBuildObject(selectedObject.id, (object) => ({
+                      ...object,
+                      name: event.target.value
+                    }))}
+                  />
+                </section>
+
+                <section className="inspector-section">
+                  <h3>TYPE</h3>
+                  <select
+                    value={selectedObject.kind}
+                    onChange={(event) => updateBuildObject(selectedObject.id, (object) => ({
+                      ...object,
+                      kind: event.target.value as SceneObject["kind"]
+                    }))}
+                  >
+                    <option value="truss">Truss</option>
+                    <option value="platform">Platform / Riser</option>
+                    <option value="box">Scenic Box / Object</option>
+                  </select>
+                </section>
+
+                <ObjectVectorEditor
+                  title="POSITION"
+                  vector={selectedObject.position}
+                  units={units}
+                  dimensional
+                  onChange={(axis, value) => updateBuildObject(selectedObject.id, (object) => ({
+                    ...object,
+                    position: { ...object.position, [axis]: value }
+                  }))}
+                />
+
+                <ObjectVectorEditor
+                  title="SIZE"
+                  vector={selectedObject.size}
+                  units={units}
+                  dimensional
+                  positive
+                  onChange={(axis, value) => updateBuildObject(selectedObject.id, (object) => ({
+                    ...object,
+                    size: { ...object.size, [axis]: value }
+                  }))}
+                />
+
+                <ObjectVectorEditor
+                  title="ROTATION"
+                  vector={selectedObject.rotation}
+                  units={units}
+                  onChange={(axis, value) => updateBuildObject(selectedObject.id, (object) => ({
+                    ...object,
+                    rotation: { ...object.rotation, [axis]: value }
+                  }))}
+                />
+
+                <section className="inspector-section">
+                  <button className="danger-button full-width" onClick={() => deleteBuildObject(selectedObject.id)}>
+                    DELETE OBJECT
+                  </button>
+                </section>
+              </>
+            ) : (
+              <>
+                <section className="inspector-section">
+                  <div className="eyebrow">REAL WORLD SCALE</div>
+                  <h2>Venue + Stage</h2>
+                  <p className="muted">Every object uses physical units. Select an object in the tree to edit its size and placement.</p>
+                </section>
+                <section className="inspector-section dimension-grid">
+                  {DIMENSION_FIELDS.map(([key, label]) => (
+                    <label key={key}>
+                      <span>{label}</span>
+                      <div>
+                        <input
+                          value={displayDistance(dimensions[key], units)}
+                          onChange={(event) => updateDimension(key, event.target.value)}
+                        />
+                        <small>{units === "ft" ? "FT" : "M"}</small>
+                      </div>
+                    </label>
+                  ))}
+                </section>
+                <section className="inspector-section">
+                  <h3>MATERIAL ENVIRONMENT</h3>
+                  <select value={material} onChange={(event) => setMaterial(event.target.value as MaterialPreset)}>
+                    <option value="production-dark">Production Dark</option>
+                    <option value="ballroom">Ballroom</option>
+                    <option value="black-box">Black Box</option>
+                  </select>
+                </section>
+              </>
+            )}
           </aside>
         </section>
       )}
@@ -855,6 +943,46 @@ export default function App() {
         </footer>
       )}
     </main>
+  );
+}
+
+
+function ObjectVectorEditor({
+  title,
+  vector,
+  units,
+  dimensional = false,
+  positive = false,
+  onChange
+}: {
+  title: string;
+  vector: { x: number; y: number; z: number };
+  units: UnitSystem;
+  dimensional?: boolean;
+  positive?: boolean;
+  onChange: (axis: "x" | "y" | "z", value: number) => void;
+}) {
+  return (
+    <section className="inspector-section">
+      <h3>{title}</h3>
+      <div className="three-inputs">
+        {(["x", "y", "z"] as const).map((axis) => (
+          <label key={axis}>
+            <span>{axis.toUpperCase()}</span>
+            <input
+              value={dimensional ? displayDistance(vector[axis], units) : Number(vector[axis].toFixed(1))}
+              onChange={(event) => {
+                const parsed = Number(event.target.value);
+                if (!Number.isFinite(parsed)) return;
+                const value = dimensional ? inputDistance(parsed, units) : parsed;
+                if (positive && value <= 0) return;
+                onChange(axis, value);
+              }}
+            />
+          </label>
+        ))}
+      </div>
+    </section>
   );
 }
 
