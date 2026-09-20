@@ -4,13 +4,14 @@ import { fixtureFrameFromDmxPacket } from "./live/artnet";
 import { connectToLumaRig, type LumaRigConnection } from "./live/lumarig";
 import { startArtNetReceiver } from "./live/tauriArtNet";
 import { startSacnReceiver } from "./live/tauriSacn";
-import { DEFAULT_DIMENSIONS, DEFAULT_FIXTURES } from "./viz/defaults";
+import { DEFAULT_DIMENSIONS, DEFAULT_FIXTURES, DEFAULT_OBJECTS } from "./viz/defaults";
 import { LumaVizScene } from "./viz/scene";
 import type {
   FixtureDefinition,
   FixtureFrame,
   MaterialPreset,
   SceneDimensions,
+  SceneObject,
   SelectionSnapshot,
   TransformTool,
   UnitSystem,
@@ -64,6 +65,15 @@ function cloneFixtures(): FixtureDefinition[] {
   }));
 }
 
+function cloneObjects(): SceneObject[] {
+  return DEFAULT_OBJECTS.map((object) => ({
+    ...object,
+    position: { ...object.position },
+    rotation: { ...object.rotation },
+    size: { ...object.size }
+  }));
+}
+
 function makeFixture(index: number): FixtureDefinition {
   return {
     id: "fixture-" + Date.now() + "-" + index,
@@ -94,6 +104,8 @@ export default function App() {
   const [page, setPage] = useState<PageId>("visualize");
   const [dimensions, setDimensions] = useState<SceneDimensions>({ ...DEFAULT_DIMENSIONS });
   const [fixtures, setFixtures] = useState<FixtureDefinition[]>(cloneFixtures);
+  const [objects, setObjects] = useState<SceneObject[]>(cloneObjects);
+  const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const fixturesRef = useRef<FixtureDefinition[]>(fixtures);
   const [material, setMaterial] = useState<MaterialPreset>("production-dark");
   const [units, setUnits] = useState<UnitSystem>("ft");
@@ -118,6 +130,7 @@ export default function App() {
       canvasRef.current,
       dimensions,
       fixtures,
+      objects,
       material,
       setSelected
     );
@@ -131,7 +144,7 @@ export default function App() {
       if (sceneRef.current === viz) sceneRef.current = null;
       viz.dispose();
     };
-  }, [page, dimensions, fixtures, material, sceneVersion]);
+  }, [page, dimensions, fixtures, objects, material, sceneVersion]);
 
   useEffect(() => {
     sceneRef.current?.setView(activeView);
@@ -153,7 +166,7 @@ export default function App() {
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [source, page, sceneVersion, dimensions, fixtures, material]);
+  }, [source, page, sceneVersion, dimensions, fixtures, objects, material]);
 
   useEffect(() => {
     return () => {
@@ -284,6 +297,7 @@ export default function App() {
       version: 1,
       dimensions,
       fixtures,
+      objects,
       material,
       activeView
     }));
@@ -296,12 +310,14 @@ export default function App() {
     const saved = JSON.parse(raw) as {
       dimensions?: SceneDimensions;
       fixtures?: FixtureDefinition[];
+      objects?: SceneObject[];
       material?: MaterialPreset;
       activeView?: ViewPreset;
     };
 
     if (saved.dimensions) setDimensions(saved.dimensions);
     if (saved.fixtures) setFixtures(saved.fixtures);
+    if (saved.objects) setObjects(saved.objects);
     if (saved.material) setMaterial(saved.material);
     if (saved.activeView) setActiveView(saved.activeView);
 
@@ -312,10 +328,35 @@ export default function App() {
   function resetScene() {
     setDimensions({ ...DEFAULT_DIMENSIONS });
     setFixtures(cloneFixtures());
+    setObjects(cloneObjects());
+    setSelectedObjectId(null);
     setMaterial("production-dark");
     setActiveView("foh");
     setSelected(null);
     setSceneVersion((value) => value + 1);
+  }
+
+  function addBuildObject() {
+    const index = objects.length + 1;
+    const object: SceneObject = {
+      id: "object-" + Date.now() + "-" + index,
+      name: "Scenic Object " + index,
+      kind: "box",
+      position: { x: 0, y: 0.5, z: 3 },
+      rotation: { x: 0, y: 0, z: 0 },
+      size: { x: 1, y: 1, z: 1 }
+    };
+    setObjects((current) => [...current, object]);
+    setSelectedObjectId(object.id);
+  }
+
+  function updateBuildObject(id: string, update: (object: SceneObject) => SceneObject) {
+    setObjects((current) => current.map((object) => object.id === id ? update(object) : object));
+  }
+
+  function deleteBuildObject(id: string) {
+    setObjects((current) => current.filter((object) => object.id !== id));
+    if (selectedObjectId === id) setSelectedObjectId(null);
   }
 
   function addFixture() {
