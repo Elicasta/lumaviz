@@ -86,3 +86,7 @@ Tauri updater signing is already accounted for in the release workflow.
 Windows **Authenticode** signing is a separate trust layer. Until a Windows code-signing certificate is configured, Windows may still show publisher/SmartScreen warnings even though the updater artifacts themselves are correctly signed.
 
 Do not describe an updater-signed Windows build as Authenticode-signed unless a real Windows code-signing certificate was used.
+
+## Public source build note
+
+The LumaViz source repository is currently public, so normal GitHub-hosted CI runners can verify the project before packaging. The separate `lumaviz-releases` repository is still only required for published installers and updater metadata.
