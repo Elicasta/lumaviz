@@ -974,3 +974,8 @@ select:focus {
     grid-template-columns: minmax(120px, 1.1fr) minmax(170px, 1.5fr) 78px 78px 72px 62px;
   }
 }
+
+
+.full-width {
+  width: 100%;
+}
