@@ -1,5 +1,5 @@
 import { feetToMeters } from "./units";
-import type { FixtureDefinition, SceneDimensions } from "./types";
+import type { FixtureDefinition, SceneDimensions, SceneObject } from "./types";
 
 export const DEFAULT_DIMENSIONS: SceneDimensions = {
   roomWidth: feetToMeters(54),
@@ -65,5 +65,33 @@ export const DEFAULT_FIXTURES: FixtureDefinition[] = [
     position: { x: feetToMeters(9), y: feetToMeters(2.7), z: feetToMeters(11) },
     rotation: { x: 0, y: 0, z: 0 },
     patch: { enabled: true, universe: 1, address: 30, profileId: "lumaviz-moving-head-9ch" }
+  }
+];
+
+
+export const DEFAULT_OBJECTS: SceneObject[] = [
+  {
+    id: "truss-a",
+    name: "Truss A",
+    kind: "truss",
+    position: { x: 0, y: feetToMeters(11), z: feetToMeters(4) },
+    rotation: { x: 0, y: 0, z: 0 },
+    size: { x: feetToMeters(28), y: feetToMeters(0.5), z: feetToMeters(0.5) }
+  },
+  {
+    id: "truss-b",
+    name: "Truss B",
+    kind: "truss",
+    position: { x: 0, y: feetToMeters(11), z: feetToMeters(14) },
+    rotation: { x: 0, y: 0, z: 0 },
+    size: { x: feetToMeters(28), y: feetToMeters(0.5), z: feetToMeters(0.5) }
+  },
+  {
+    id: "band-riser",
+    name: "Band Riser",
+    kind: "platform",
+    position: { x: feetToMeters(10), y: feetToMeters(2.3), z: feetToMeters(10) },
+    rotation: { x: 0, y: 0, z: 0 },
+    size: { x: feetToMeters(8), y: feetToMeters(0.6), z: feetToMeters(5) }
   }
 ];
