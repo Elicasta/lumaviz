@@ -66,7 +66,7 @@ export interface FixtureFrame {
   fixtures: FixtureState[];
 }
 
-export interface ArtNetDmxPacket {
+export interface DmxUniversePacket {
   universe: number;
   sequence: number;
   physical: number;
