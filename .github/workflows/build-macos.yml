@@ -2,6 +2,9 @@ name: Build macOS App
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - build/macos-smoke
 
 permissions:
   contents: read
