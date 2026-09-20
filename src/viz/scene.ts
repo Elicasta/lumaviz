@@ -51,7 +51,6 @@ export class LumaVizScene {
   private fixtures = new Map<string, FixtureRuntime>();
   private gizmos: GizmoManager;
   private selectedId: string | null = null;
-  private lastSequence = -1;
   private onSelection?: (value: SelectionSnapshot | null) => void;
   private resizeObserver: ResizeObserver;
 
@@ -183,6 +182,23 @@ export class LumaVizScene {
     );
     screen.rotation.y = Math.PI;
     screen.material = m.screen;
+
+    const trussY = Math.min(
+      d.ceilingHeight - 0.75,
+      d.stageHeight + Math.max(3.2, d.drapeHeight * 0.72)
+    );
+    const trussWidth = Math.min(d.stageWidth * 0.88, d.roomWidth * 0.82);
+
+    const trussA = MeshBuilder.CreateBox("truss-a", {
+      width: trussWidth,
+      height: 0.16,
+      depth: 0.16
+    }, this.scene);
+    trussA.position.set(0, trussY, d.stageDepth * 0.18);
+    trussA.material = m.fixture;
+
+    const trussB = trussA.clone("truss-b");
+    if (trussB) trussB.position.z = d.stageDepth * 0.82;
 
     fixtures.forEach((fixture) => this.createFixture(fixture, m.fixture));
   }
@@ -348,9 +364,8 @@ export class LumaVizScene {
   }
 
   applyFrame(frame: FixtureFrame): void {
-    if (frame.sequence <= this.lastSequence) return;
-    this.lastSequence = frame.sequence;
-
+    // WebSocket is ordered and native UDP adapters normalize delivery before this point.
+    // Do not compare sequence numbers across different sources because Art-Net/sACN wrap.
     for (const state of frame.fixtures) {
       const runtime = this.fixtures.get(state.id);
       if (!runtime) continue;
@@ -364,6 +379,11 @@ export class LumaVizScene {
       const color = Color3.FromHexString(runtime.color);
       runtime.light.diffuse = color;
       runtime.light.intensity = runtime.intensity * 14;
+      runtime.light.angle = runtime.beamAngle * Math.PI / 180;
+      const beamScale = Math.tan((runtime.beamAngle * Math.PI / 180) / 2)
+        / Math.tan((18 * Math.PI / 180) / 2);
+      runtime.beam.scaling.x = beamScale;
+      runtime.beam.scaling.z = beamScale;
       runtime.beamMaterial.albedoColor = color;
       runtime.beamMaterial.emissiveColor = color.scale(0.85);
       runtime.beamMaterial.alpha = runtime.intensity * 0.16;
