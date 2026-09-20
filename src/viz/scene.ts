@@ -21,6 +21,7 @@ import type {
   FixtureFrame,
   MaterialPreset,
   SceneDimensions,
+  SceneObject,
   SelectionSnapshot,
   TransformTool,
   ViewPreset
@@ -58,6 +59,7 @@ export class LumaVizScene {
     canvas: HTMLCanvasElement,
     dimensions: SceneDimensions,
     fixtures: FixtureDefinition[],
+    objects: SceneObject[],
     materialPreset: MaterialPreset,
     onSelection?: (value: SelectionSnapshot | null) => void
   ) {
@@ -101,7 +103,7 @@ export class LumaVizScene {
     this.gizmos.positionGizmoEnabled = false;
     this.gizmos.rotationGizmoEnabled = false;
 
-    this.buildScene(fixtures, materialPreset);
+    this.buildScene(fixtures, objects, materialPreset);
     this.setView("foh");
 
     this.scene.onPointerDown = (_, pick) => {
@@ -114,7 +116,11 @@ export class LumaVizScene {
     this.resizeObserver.observe(canvas);
   }
 
-  private buildScene(fixtures: FixtureDefinition[], materialPreset: MaterialPreset): void {
+  private buildScene(
+    fixtures: FixtureDefinition[],
+    objects: SceneObject[],
+    materialPreset: MaterialPreset
+  ): void {
     const m = createSceneMaterials(this.scene, materialPreset);
     const d = this.dimensions;
 
@@ -182,22 +188,25 @@ export class LumaVizScene {
     screen.rotation.y = Math.PI;
     screen.material = m.screen;
 
-    const trussY = Math.min(
-      d.ceilingHeight - 0.75,
-      d.stageHeight + Math.max(3.2, d.drapeHeight * 0.72)
-    );
-    const trussWidth = Math.min(d.stageWidth * 0.88, d.roomWidth * 0.82);
-
-    const trussA = MeshBuilder.CreateBox("truss-a", {
-      width: trussWidth,
-      height: 0.16,
-      depth: 0.16
-    }, this.scene);
-    trussA.position.set(0, trussY, d.stageDepth * 0.18);
-    trussA.material = m.fixture;
-
-    const trussB = trussA.clone("truss-b");
-    if (trussB) trussB.position.z = d.stageDepth * 0.82;
+    for (const object of objects) {
+      const mesh = MeshBuilder.CreateBox(object.id, {
+        width: object.size.x,
+        height: object.size.y,
+        depth: object.size.z
+      }, this.scene);
+      mesh.position.set(object.position.x, object.position.y, object.position.z);
+      mesh.rotation.set(
+        object.rotation.x * Math.PI / 180,
+        object.rotation.y * Math.PI / 180,
+        object.rotation.z * Math.PI / 180
+      );
+      mesh.material = object.kind === "truss"
+        ? m.fixture
+        : object.kind === "platform"
+          ? m.stage
+          : m.wall;
+      mesh.metadata = { sceneObjectId: object.id, sceneObjectKind: object.kind };
+    }
 
     fixtures.forEach((fixture) => this.createFixture(fixture, m.fixture));
   }
