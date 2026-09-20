@@ -53,7 +53,9 @@ export class LumaVizScene {
   private fixtures = new Map<string, FixtureRuntime>();
   private gizmos: GizmoManager;
   private selectedId: string | null = null;
+  private activeTool: TransformTool = "select";
   private onSelection?: (value: SelectionSnapshot | null) => void;
+  private onFixtureTransform?: (value: FixtureDefinition) => void;
   private resizeObserver: ResizeObserver;
 
   constructor(
@@ -62,10 +64,12 @@ export class LumaVizScene {
     fixtures: FixtureDefinition[],
     objects: SceneObject[],
     materialPreset: MaterialPreset,
-    onSelection?: (value: SelectionSnapshot | null) => void
+    onSelection?: (value: SelectionSnapshot | null) => void,
+    onFixtureTransform?: (value: FixtureDefinition) => void
   ) {
     this.dimensions = dimensions;
     this.onSelection = onSelection;
+    this.onFixtureTransform = onFixtureTransform;
 
     this.engine = new Engine(canvas, true, {
       preserveDrawingBuffer: true,
@@ -110,6 +114,10 @@ export class LumaVizScene {
     this.scene.onPointerDown = (_, pick) => {
       const id = pick?.pickedMesh?.metadata?.fixtureId as string | undefined;
       if (id) this.selectFixture(id);
+    };
+
+    this.scene.onPointerUp = () => {
+      this.syncSelectedTransform();
     };
 
     this.engine.runRenderLoop(() => this.scene.render());
@@ -369,6 +377,7 @@ export class LumaVizScene {
   }
 
   setTool(tool: TransformTool): void {
+    this.activeTool = tool;
     this.gizmos.positionGizmoEnabled = tool === "move";
     this.gizmos.rotationGizmoEnabled = tool === "rotate";
     if (tool === "select") {
@@ -382,6 +391,9 @@ export class LumaVizScene {
     const runtime = this.fixtures.get(id);
     if (!runtime) return;
     this.selectedId = id;
+    if (this.activeTool !== "select") {
+      this.gizmos.attachToNode(runtime.root);
+    }
     this.emitSelection(runtime);
   }
 
@@ -392,6 +404,12 @@ export class LumaVizScene {
     runtime.root.position[axis] = value;
     runtime.definition.position[axis] = value;
     this.emitSelection(runtime);
+    this.onFixtureTransform?.({
+      ...runtime.definition,
+      position: { ...runtime.definition.position },
+      rotation: { ...runtime.definition.rotation },
+      patch: { ...runtime.definition.patch }
+    });
   }
 
   updateSelectedRotation(axis: "x" | "y" | "z", degrees: number): void {
@@ -401,6 +419,50 @@ export class LumaVizScene {
     runtime.root.rotation[axis] = degrees * Math.PI / 180;
     runtime.definition.rotation[axis] = degrees;
     this.emitSelection(runtime);
+    this.onFixtureTransform?.({
+      ...runtime.definition,
+      position: { ...runtime.definition.position },
+      rotation: { ...runtime.definition.rotation },
+      patch: { ...runtime.definition.patch }
+    });
+  }
+
+  private syncSelectedTransform(): void {
+    if (!this.selectedId || this.activeTool === "select") return;
+    const runtime = this.fixtures.get(this.selectedId);
+    if (!runtime) return;
+
+    const position = {
+      x: runtime.root.position.x,
+      y: runtime.root.position.y,
+      z: runtime.root.position.z
+    };
+    const rotation = {
+      x: runtime.root.rotation.x * 180 / Math.PI,
+      y: runtime.root.rotation.y * 180 / Math.PI,
+      z: runtime.root.rotation.z * 180 / Math.PI
+    };
+
+    const epsilon = 0.0001;
+    const changed =
+      Math.abs(position.x - runtime.definition.position.x) > epsilon ||
+      Math.abs(position.y - runtime.definition.position.y) > epsilon ||
+      Math.abs(position.z - runtime.definition.position.z) > epsilon ||
+      Math.abs(rotation.x - runtime.definition.rotation.x) > epsilon ||
+      Math.abs(rotation.y - runtime.definition.rotation.y) > epsilon ||
+      Math.abs(rotation.z - runtime.definition.rotation.z) > epsilon;
+
+    if (!changed) return;
+
+    runtime.definition.position = position;
+    runtime.definition.rotation = rotation;
+    this.emitSelection(runtime);
+    this.onFixtureTransform?.({
+      ...runtime.definition,
+      position: { ...position },
+      rotation: { ...rotation },
+      patch: { ...runtime.definition.patch }
+    });
   }
 
   applyFrame(frame: FixtureFrame): void {
