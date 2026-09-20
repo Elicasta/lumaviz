@@ -18,10 +18,52 @@ export const DEFAULT_DIMENSIONS: SceneDimensions = {
 const y = feetToMeters(9.8);
 
 export const DEFAULT_FIXTURES: FixtureDefinition[] = [
-  { id: "front-wash-1", name: "Front Wash 1", kind: "par", position: { x: feetToMeters(-11), y, z: feetToMeters(-8) }, rotation: { x: -32, y: 16, z: 0 } },
-  { id: "front-wash-2", name: "Front Wash 2", kind: "par", position: { x: feetToMeters(11), y, z: feetToMeters(-8) }, rotation: { x: -32, y: -16, z: 0 } },
-  { id: "back-wash-1", name: "Back Wash 1", kind: "par", position: { x: feetToMeters(-12), y: feetToMeters(9.2), z: feetToMeters(13) }, rotation: { x: -50, y: -6, z: 0 } },
-  { id: "back-wash-2", name: "Back Wash 2", kind: "par", position: { x: feetToMeters(12), y: feetToMeters(9.2), z: feetToMeters(13) }, rotation: { x: -50, y: 6, z: 0 } },
-  { id: "moving-head-left", name: "Moving Head L", kind: "moving-head", position: { x: feetToMeters(-9), y: feetToMeters(2.7), z: feetToMeters(11) }, rotation: { x: 0, y: 0, z: 0 } },
-  { id: "moving-head-right", name: "Moving Head R", kind: "moving-head", position: { x: feetToMeters(9), y: feetToMeters(2.7), z: feetToMeters(11) }, rotation: { x: 0, y: 0, z: 0 } }
+  {
+    id: "front-wash-1",
+    name: "Front Wash 1",
+    kind: "par",
+    position: { x: feetToMeters(-11), y, z: feetToMeters(-8) },
+    rotation: { x: -32, y: 16, z: 0 },
+    patch: { enabled: true, universe: 1, address: 1, profileId: "generic-rgbw-par-5ch" }
+  },
+  {
+    id: "front-wash-2",
+    name: "Front Wash 2",
+    kind: "par",
+    position: { x: feetToMeters(11), y, z: feetToMeters(-8) },
+    rotation: { x: -32, y: -16, z: 0 },
+    patch: { enabled: true, universe: 1, address: 6, profileId: "generic-rgbw-par-5ch" }
+  },
+  {
+    id: "back-wash-1",
+    name: "Back Wash 1",
+    kind: "par",
+    position: { x: feetToMeters(-12), y: feetToMeters(9.2), z: feetToMeters(13) },
+    rotation: { x: -50, y: -6, z: 0 },
+    patch: { enabled: true, universe: 1, address: 11, profileId: "generic-rgbw-par-5ch" }
+  },
+  {
+    id: "back-wash-2",
+    name: "Back Wash 2",
+    kind: "par",
+    position: { x: feetToMeters(12), y: feetToMeters(9.2), z: feetToMeters(13) },
+    rotation: { x: -50, y: 6, z: 0 },
+    patch: { enabled: true, universe: 1, address: 16, profileId: "generic-rgbw-par-5ch" }
+  },
+  {
+    id: "moving-head-left",
+    name: "Moving Head L",
+    kind: "moving-head",
+    position: { x: feetToMeters(-9), y: feetToMeters(2.7), z: feetToMeters(11) },
+    rotation: { x: 0, y: 0, z: 0 },
+    patch: { enabled: true, universe: 1, address: 21, profileId: "lumaviz-moving-head-9ch" }
+  },
+  {
+    id: "moving-head-right",
+    name: "Moving Head R",
+    kind: "moving-head",
+    position: { x: feetToMeters(9), y: feetToMeters(2.7), z: feetToMeters(11) },
+    rotation: { x: 0, y: 0, z: 0 },
+    patch: { enabled: true, universe: 1, address: 30, profileId: "lumaviz-moving-head-9ch" }
+  }
 ];
