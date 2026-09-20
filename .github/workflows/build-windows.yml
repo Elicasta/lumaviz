@@ -17,6 +17,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
+          cache: npm
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -36,6 +37,15 @@ jobs:
 
       - name: Build Windows installers
         run: npm run tauri build -- --target x86_64-pc-windows-msvc --bundles nsis,msi
+
+      - name: Verify installers exist
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe" -ErrorAction Stop
+          $msi = Get-ChildItem "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi" -ErrorAction Stop
+          Write-Host "NSIS:" $exe.FullName
+          Write-Host "MSI:" $msi.FullName
+          Write-Host "Note: updater signatures and Windows Authenticode signatures are separate."
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
