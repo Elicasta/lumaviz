@@ -469,7 +469,7 @@ export default function App() {
             <button onClick={saveScene}><span>▣</span><small>SAVE</small></button>
           </div>
 
-          {(page === "build" || page === "visualize") && (
+          {page === "visualize" && (
             <>
               <div className="command-divider" />
               <div className="command-group tools">
