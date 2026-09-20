@@ -33,6 +33,13 @@ export interface SceneDimensions {
   drapeHeight: number;
 }
 
+export interface CustomCamera {
+  id: string;
+  name: string;
+  position: Vec3;
+  target: Vec3;
+}
+
 export interface SceneObject {
   id: string;
   name: string;
