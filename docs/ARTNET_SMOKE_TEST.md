@@ -40,3 +40,8 @@ fixture color: #ff5010
 10. Close LumaViz while LumaRig is running and confirm physical output continues uninterrupted.
 
 For separate machines, replace `127.0.0.1` with the LumaViz computer's LAN IPv4 address.
+
+
+## LumaRig output role
+
+Art-Net is a general LumaRig network output, not a LumaViz-only transport. The same resolved frame can target LumaViz, an Art-Net node, or another compatible receiver. LumaViz remains read-only and non-authoritative.
