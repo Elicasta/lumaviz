@@ -1,0 +1,94 @@
+name: Publish Windows Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (for example 0.1.0)"
+        required: true
+        type: string
+      notes:
+        description: "Release notes shown in GitHub and updater metadata"
+        required: false
+        default: "LumaViz Windows update"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lumaviz-windows-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build Windows x64
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Validate release secrets
+        shell: pwsh
+        env:
+          RELEASE_TOKEN: ${{ secrets.LUMAVIZ_RELEASE_TOKEN }}
+          UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+          UPDATER_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          UPDATER_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if (-not $env:RELEASE_TOKEN) { throw "Missing LUMAVIZ_RELEASE_TOKEN" }
+          if (-not $env:UPDATER_PUBLIC_KEY) { throw "Missing TAURI_SIGNING_PUBLIC_KEY" }
+          if (-not $env:UPDATER_PRIVATE_KEY) { throw "Missing TAURI_SIGNING_PRIVATE_KEY" }
+          if (-not $env:UPDATER_PRIVATE_KEY_PASSWORD) { throw "Missing TAURI_SIGNING_PRIVATE_KEY_PASSWORD" }
+
+      - name: Set release version
+        run: npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version
+
+      - name: Configure updater metadata
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+        run: |
+          node -e "const fs=require('fs'); const p='src-tauri/tauri.conf.json'; const c=JSON.parse(fs.readFileSync(p,'utf8')); c.bundle??={}; c.bundle.createUpdaterArtifacts=true; c.plugins??={}; c.plugins.updater??={}; c.plugins.updater.pubkey=process.env.TAURI_SIGNING_PUBLIC_KEY; c.plugins.updater.endpoints=['https://github.com/Elicasta/lumaviz-releases/releases/latest/download/latest.json']; fs.writeFileSync(p,JSON.stringify(c,null,2)+'\n');"
+
+      - name: Build, updater-sign, and publish Windows
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.LUMAVIZ_RELEASE_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          owner: Elicasta
+          repo: lumaviz-releases
+          releaseCommitish: main
+          tagName: app-v__VERSION__
+          releaseName: "LumaViz v__VERSION__"
+          releaseBody: ${{ inputs.notes }}
+          releaseDraft: false
+          prerelease: false
+          generateReleaseNotes: false
+          uploadUpdaterJson: true
+          uploadUpdaterSignatures: true
+          updaterJsonPreferNsis: true
+          retryAttempts: 2
+          args: "--target x86_64-pc-windows-msvc --bundles nsis,msi"
