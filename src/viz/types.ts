@@ -11,6 +11,7 @@ export type TransformTool = "select" | "move" | "rotate";
 export type UnitSystem = "ft" | "m";
 export type MaterialPreset = "production-dark" | "ballroom" | "black-box";
 export type FixtureKind = "par" | "moving-head" | "blinder";
+export type SceneObjectKind = "truss" | "platform" | "box";
 
 export interface Vec3 {
   x: number;
@@ -30,6 +31,15 @@ export interface SceneDimensions {
   screenBottom: number;
   drapeWidth: number;
   drapeHeight: number;
+}
+
+export interface SceneObject {
+  id: string;
+  name: string;
+  kind: SceneObjectKind;
+  position: Vec3;
+  rotation: Vec3;
+  size: Vec3;
 }
 
 export interface FixturePatch {
