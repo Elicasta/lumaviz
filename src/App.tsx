@@ -112,6 +112,7 @@ export default function App() {
   const [units, setUnits] = useState<UnitSystem>("ft");
   const [activeView, setActiveView] = useState<ViewPreset>("foh");
   const [customCameras, setCustomCameras] = useState<CustomCamera[]>([]);
+  const [activeCustomCameraId, setActiveCustomCameraId] = useState<string | null>(null);
   const [tool, setTool] = useState<TransformTool>("select");
   const [selected, setSelected] = useState<SelectionSnapshot | null>(null);
   const [sceneVersion, setSceneVersion] = useState(1);
@@ -134,19 +135,29 @@ export default function App() {
       fixtures,
       objects,
       material,
-      setSelected
+      setSelected,
+      (transformed) => {
+        fixturesRef.current = fixturesRef.current.map((fixture) =>
+          fixture.id === transformed.id ? transformed : fixture
+        );
+        setFixtures((current) => current.map((fixture) =>
+          fixture.id === transformed.id ? transformed : fixture
+        ));
+      }
     );
 
     sceneRef.current = viz;
     viz.setTool(tool);
-    viz.setView(activeView);
+    const activeCustomCamera = customCameras.find((camera) => camera.id === activeCustomCameraId);
+    if (activeCustomCamera) viz.applyCustomCamera(activeCustomCamera);
+    else viz.setView(activeView);
     if (lastFrameRef.current) viz.applyFrame(lastFrameRef.current);
 
     return () => {
       if (sceneRef.current === viz) sceneRef.current = null;
       viz.dispose();
     };
-  }, [page, dimensions, fixtures, objects, material, sceneVersion]);
+  }, [page, dimensions, objects, material, sceneVersion]);
 
   useEffect(() => {
     sceneRef.current?.setView(activeView);
@@ -307,7 +318,8 @@ export default function App() {
       objects,
       material,
       activeView,
-      customCameras
+      customCameras,
+      activeCustomCameraId
     }));
   }
 
@@ -322,6 +334,7 @@ export default function App() {
       material?: MaterialPreset;
       activeView?: ViewPreset;
       customCameras?: CustomCamera[];
+      activeCustomCameraId?: string | null;
     };
 
     if (saved.dimensions) setDimensions(saved.dimensions);
@@ -330,6 +343,7 @@ export default function App() {
     if (saved.material) setMaterial(saved.material);
     if (saved.activeView) setActiveView(saved.activeView);
     if (saved.customCameras) setCustomCameras(saved.customCameras);
+    setActiveCustomCameraId(saved.activeCustomCameraId ?? null);
 
     setSelected(null);
     setSceneVersion((value) => value + 1);
@@ -343,6 +357,7 @@ export default function App() {
     setMaterial("production-dark");
     setActiveView("foh");
     setCustomCameras([]);
+    setActiveCustomCameraId(null);
     setSelected(null);
     setSceneVersion((value) => value + 1);
   }
@@ -410,6 +425,7 @@ export default function App() {
   }
 
   function setView(view: ViewPreset) {
+    setActiveCustomCameraId(null);
     setActiveView(view);
     sceneRef.current?.setView(view);
   }
@@ -419,15 +435,19 @@ export default function App() {
     if (!viz) return;
     const camera = viz.captureCamera("CAM " + (customCameras.length + 1));
     setCustomCameras((current) => [...current, camera]);
+    setActiveCustomCameraId(camera.id);
+    setActiveView("free");
   }
 
   function recallCustomCamera(camera: CustomCamera) {
-    sceneRef.current?.applyCustomCamera(camera);
+    setActiveCustomCameraId(camera.id);
     setActiveView("free");
+    sceneRef.current?.applyCustomCamera(camera);
   }
 
   function deleteCustomCamera(id: string) {
     setCustomCameras((current) => current.filter((camera) => camera.id !== id));
+    if (activeCustomCameraId === id) setActiveCustomCameraId(null);
   }
 
   async function requestFullscreen() {
@@ -1033,7 +1053,7 @@ function PanelHeading({ title }: { title: string }) {
 }
 
 function TreeStatic({ icon, label }: { icon: string; label: string }) {
-  return <button className="tree-row static-row"><span>{icon}</span>{label}</button>;
+  return <div className="tree-row static-row"><span>{icon}</span>{label}</div>;
 }
 
 function Viewport({
