@@ -1,10 +1,32 @@
-# LumaRig → LumaViz fixture frame protocol
+# LumaRig → LumaViz connection protocol
 
-LumaViz is a listener. It never owns show playback or physical DMX output.
+LumaViz is a **listener and renderer**. It never owns LumaRig show playback or physical DMX output.
 
-The transport can change without changing the rendering contract. Same-device IPC, LAN WebSocket, Art-Net-derived state, or another transport can all normalize into this frame shape.
+All transports normalize into the same virtual fixture state before rendering.
 
-## Frame
+## 1. LumaRig Direct
+
+Preferred path when LumaRig is the controller.
+
+Transport: WebSocket.
+
+Development endpoint:
+
+```
+ws://127.0.0.1:9460/lumaviz
+```
+
+On connection, LumaViz sends:
+
+```json
+{
+  "type": "lumaviz.hello",
+  "protocolVersion": 1,
+  "capabilities": ["fixture-frame-v1"]
+}
+```
+
+LumaRig sends normalized fixture frames:
 
 ```json
 {
@@ -26,21 +48,73 @@ The transport can change without changing the rendering contract. Same-device IP
 }
 ```
 
-## Rules
+LumaRig Direct carries semantic state, not raw controller UI state.
 
-- `id` is stable across LumaRig and LumaViz.
-- `intensity` is normalized from 0 to 1.
-- Colors are rendered values, not raw DMX bytes.
-- Pan/tilt are physical degrees after fixture-mode decoding.
-- Missing optional properties mean “retain the previous rendered value.”
-- Sequence numbers are monotonic. Older frames are discarded.
-- Rendering must never write back to LumaRig’s live DMX state.
-- When connection is lost, LumaViz freezes the last frame and marks the link offline. It does not blackout fixtures.
+## 2. Art-Net
 
-## Future transports
+Desktop listener:
 
-1. Same-device Tauri IPC/local socket.
-2. LAN WebSocket with discovery.
-3. Art-Net/sACN listener mode for third-party controllers and diagnostics.
+- UDP port: 6454
+- ArtDMX packets only in v0.1
+- Port-Address 0 is displayed as LumaViz Universe 1
 
-The renderer only consumes normalized frames. Transport-specific code belongs behind an adapter.
+Flow:
+
+```
+ArtDMX packet
+  -> universe + channel bytes
+  -> PATCH fixture profile
+  -> normalized fixture frame
+  -> renderer
+```
+
+## 3. sACN / E1.31
+
+Desktop listener:
+
+- UDP port: 5568
+- standard data packets
+- DMX start code 0
+- multicast subscriptions derived from PATCH universes
+
+Flow is identical to Art-Net after the universe byte array enters the patch layer.
+
+## PATCH contract
+
+Each visual fixture stores:
+
+```json
+{
+  "enabled": true,
+  "universe": 1,
+  "address": 21,
+  "profileId": "lumaviz-moving-head-9ch"
+}
+```
+
+The profile determines channel semantics and footprint.
+
+GDTF, FreeStyler, and Open Fixture Library imports should eventually resolve into this runtime mapping automatically.
+
+## Rendering rules
+
+- Fixture IDs are stable inside a scene.
+- Intensity is normalized 0..1.
+- Colors are resolved display colors by the time they reach the renderer.
+- Pan and tilt are physical degrees.
+- Missing semantic properties retain the previous rendered value.
+- A lost connection freezes the last valid rendered frame.
+- Disconnecting LumaViz never sends blackout or stop commands to LumaRig.
+- Transport code never directly manipulates Babylon meshes.
+- PATCH / normalization is the boundary between DMX bytes and fixture semantics.
+
+## Source switching
+
+Only one source is authoritative at a time:
+
+1. LumaRig Direct
+2. Art-Net
+3. sACN
+4. Demo
+
+Switching sources does not change the venue, patch, camera definitions, or saved scene.
