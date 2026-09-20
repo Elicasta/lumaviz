@@ -1,13 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { ArtNetDmxPacket } from "../viz/types";
+import type { DmxUniversePacket } from "../viz/types";
 
 function isTauriRuntime(): boolean {
   return "__TAURI_INTERNALS__" in window;
 }
 
 export async function startArtNetReceiver(
-  onPacket: (packet: ArtNetDmxPacket) => void,
+  onPacket: (packet: DmxUniversePacket) => void,
   onError?: (message: string) => void
 ): Promise<UnlistenFn | null> {
   if (!isTauriRuntime()) {
@@ -15,24 +15,30 @@ export async function startArtNetReceiver(
     return null;
   }
 
-  const unlisten = await listen<ArtNetDmxPacket>("artnet-dmx", (event) => {
+  const unlistenPacket = await listen<DmxUniversePacket>("artnet-dmx", (event) => {
     onPacket(event.payload);
+  });
+
+  const unlistenError = await listen<string>("artnet-error", (event) => {
+    onError?.(event.payload);
   });
 
   try {
     await invoke("start_artnet_listener");
   } catch (error) {
-    unlisten();
+    await unlistenPacket();
+    await unlistenError();
     onError?.(String(error));
     return null;
   }
 
   return async () => {
-    await unlisten();
+    await unlistenPacket();
+    await unlistenError();
     try {
       await invoke("stop_artnet_listener");
     } catch {
-      // App shutdown can tear down native state before the listener cleanup runs.
+      // App shutdown can tear down native state before listener cleanup runs.
     }
   };
 }
