@@ -1,0 +1,153 @@
+name: Publish macOS Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (for example 0.1.0)"
+        required: true
+        type: string
+      notes:
+        description: "Release notes shown in GitHub and updater metadata"
+        required: false
+        default: "LumaViz update"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lumaviz-macos-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Developer ID + notarized universal DMG
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Set up Rust targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Validate release and Apple signing secrets
+        env:
+          RELEASE_TOKEN: ${{ secrets.LUMAVIZ_RELEASE_TOKEN }}
+          UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+          UPDATER_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          UPDATER_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          test -n "$RELEASE_TOKEN" || (echo "Missing LUMAVIZ_RELEASE_TOKEN" && exit 1)
+          test -n "$UPDATER_PUBLIC_KEY" || (echo "Missing TAURI_SIGNING_PUBLIC_KEY" && exit 1)
+          test -n "$UPDATER_PRIVATE_KEY" || (echo "Missing TAURI_SIGNING_PRIVATE_KEY" && exit 1)
+          test -n "$UPDATER_PRIVATE_KEY_PASSWORD" || (echo "Missing TAURI_SIGNING_PRIVATE_KEY_PASSWORD" && exit 1)
+          test -n "$APPLE_CERTIFICATE" || (echo "Missing APPLE_CERTIFICATE" && exit 1)
+          test -n "$APPLE_CERTIFICATE_PASSWORD" || (echo "Missing APPLE_CERTIFICATE_PASSWORD" && exit 1)
+          test -n "$APPLE_SIGNING_IDENTITY" || (echo "Missing APPLE_SIGNING_IDENTITY" && exit 1)
+          test -n "$APPLE_ID" || (echo "Missing APPLE_ID" && exit 1)
+          test -n "$APPLE_PASSWORD" || (echo "Missing APPLE_PASSWORD" && exit 1)
+          test -n "$APPLE_TEAM_ID" || (echo "Missing APPLE_TEAM_ID" && exit 1)
+
+      - name: Set release version
+        run: npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version
+
+      - name: Configure production signing and updater metadata
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const p = 'src-tauri/tauri.conf.json';
+          const c = JSON.parse(fs.readFileSync(p, 'utf8'));
+          c.bundle ??= {};
+          c.bundle.createUpdaterArtifacts = true;
+          c.bundle.macOS ??= {};
+          c.bundle.macOS.signingIdentity = process.env.APPLE_SIGNING_IDENTITY;
+          c.plugins ??= {};
+          c.plugins.updater ??= {};
+          c.plugins.updater.pubkey = process.env.TAURI_SIGNING_PUBLIC_KEY;
+          c.plugins.updater.endpoints = [
+            'https://github.com/Elicasta/lumaviz-releases/releases/latest/download/latest.json'
+          ];
+          fs.writeFileSync(p, JSON.stringify(c, null, 2) + '\n');
+          NODE
+
+      - name: Build, sign, notarize, and stage draft release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.LUMAVIZ_RELEASE_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          owner: Elicasta
+          repo: lumaviz-releases
+          releaseCommitish: main
+          tagName: app-v__VERSION__
+          releaseName: "LumaViz v__VERSION__"
+          releaseBody: ${{ inputs.notes }}
+          releaseDraft: true
+          prerelease: false
+          generateReleaseNotes: false
+          uploadUpdaterJson: true
+          uploadUpdaterSignatures: true
+          retryAttempts: 2
+          args: "--target universal-apple-darwin --bundles app,dmg"
+
+      - name: Verify Developer ID signature and notarization
+        run: |
+          APP_PATH="$(find src-tauri/target/universal-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)"
+          DMG_PATH="$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+          test -n "$APP_PATH" || (echo "No app bundle found" && exit 1)
+          test -n "$DMG_PATH" || (echo "No DMG found" && exit 1)
+
+          echo "App: $APP_PATH"
+          echo "DMG: $DMG_PATH"
+
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          codesign -dv --verbose=4 "$APP_PATH" 2>&1 | tee /tmp/lumaviz-release-signature.txt
+
+          if grep -q "Signature=adhoc" /tmp/lumaviz-release-signature.txt; then
+            echo "Production release was only ad-hoc signed. Refusing to publish."
+            exit 1
+          fi
+
+          spctl -a -vv --type exec "$APP_PATH"
+          xcrun stapler validate "$APP_PATH"
+          hdiutil verify "$DMG_PATH"
+
+      - name: Publish verified release
+        env:
+          GH_TOKEN: ${{ secrets.LUMAVIZ_RELEASE_TOKEN }}
+        run: |
+          gh release edit "app-v${{ inputs.version }}"             --repo Elicasta/lumaviz-releases             --draft=false
