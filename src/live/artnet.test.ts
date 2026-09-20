@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fixtureFrameFromArtNet } from "./artnet";
+import { fixtureFrameFromDmxPacket } from "./artnet";
 import type { FixtureDefinition } from "../viz/types";
 
 const fixture: FixtureDefinition = {
@@ -16,15 +16,15 @@ const fixture: FixtureDefinition = {
   }
 };
 
-describe("Art-Net fixture decoding", () => {
+describe("network DMX fixture decoding", () => {
   it("maps patched DMX bytes into normalized fixture state", () => {
-    const frame = fixtureFrameFromArtNet({
+    const frame = fixtureFrameFromDmxPacket({
       universe: 1,
       sequence: 12,
       physical: 0,
-      source: "127.0.0.1:6454",
+      source: "127.0.0.1",
       data: [128, 255, 0, 0, 0]
-    }, [fixture]);
+    }, [fixture], "artnet");
 
     expect(frame.fixtures).toHaveLength(1);
     expect(frame.fixtures[0].id).toBe("par-1");
@@ -33,13 +33,13 @@ describe("Art-Net fixture decoding", () => {
   });
 
   it("ignores fixtures patched to another universe", () => {
-    const frame = fixtureFrameFromArtNet({
+    const frame = fixtureFrameFromDmxPacket({
       universe: 2,
       sequence: 1,
       physical: 0,
-      source: "127.0.0.1:6454",
+      source: "127.0.0.1",
       data: [255, 255, 255, 255, 255]
-    }, [fixture]);
+    }, [fixture], "sacn");
 
     expect(frame.fixtures).toHaveLength(0);
   });
