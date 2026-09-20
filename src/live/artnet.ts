@@ -1,13 +1,14 @@
 import { PROFILE_BY_ID } from "../fixtures/profiles";
 import type {
-  ArtNetDmxPacket,
+  DmxUniversePacket,
   FixtureDefinition,
   FixtureFrame
 } from "../viz/types";
 
-export function fixtureFrameFromArtNet(
-  packet: ArtNetDmxPacket,
-  fixtures: FixtureDefinition[]
+export function fixtureFrameFromDmxPacket(
+  packet: DmxUniversePacket,
+  fixtures: FixtureDefinition[],
+  source: "artnet" | "sacn"
 ): FixtureFrame {
   const states = fixtures.flatMap((fixture) => {
     if (!fixture.patch.enabled || fixture.patch.universe !== packet.universe) return [];
@@ -21,7 +22,7 @@ export function fixtureFrameFromArtNet(
 
   return {
     version: 1,
-    showId: "artnet",
+    showId: source,
     sequence: packet.sequence || Date.now(),
     timestamp: Date.now(),
     fixtures: states
