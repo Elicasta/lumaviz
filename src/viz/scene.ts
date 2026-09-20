@@ -17,6 +17,7 @@ import "@babylonjs/loaders";
 import { getCameraPose } from "./cameraPresets";
 import { createSceneMaterials } from "./materials";
 import type {
+  CustomCamera,
   FixtureDefinition,
   FixtureFrame,
   MaterialPreset,
@@ -327,6 +328,37 @@ export class LumaVizScene {
     };
 
     this.fixtures.set(definition.id, runtime);
+  }
+
+  captureCamera(name: string): CustomCamera {
+    const target = this.camera.target;
+    return {
+      id: "camera-" + Date.now(),
+      name,
+      position: {
+        x: this.camera.position.x,
+        y: this.camera.position.y,
+        z: this.camera.position.z
+      },
+      target: {
+        x: target.x,
+        y: target.y,
+        z: target.z
+      }
+    };
+  }
+
+  applyCustomCamera(camera: CustomCamera): void {
+    this.camera.setPosition(new Vector3(
+      camera.position.x,
+      camera.position.y,
+      camera.position.z
+    ));
+    this.camera.setTarget(new Vector3(
+      camera.target.x,
+      camera.target.y,
+      camera.target.z
+    ));
   }
 
   setView(preset: ViewPreset): void {
