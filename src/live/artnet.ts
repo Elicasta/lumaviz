@@ -5,6 +5,8 @@ import type {
   FixtureFrame
 } from "../viz/types";
 
+let normalizedSequence = 0;
+
 export function fixtureFrameFromDmxPacket(
   packet: DmxUniversePacket,
   fixtures: FixtureDefinition[],
@@ -23,7 +25,7 @@ export function fixtureFrameFromDmxPacket(
   return {
     version: 1,
     showId: source,
-    sequence: packet.sequence || Date.now(),
+    sequence: ++normalizedSequence,
     timestamp: Date.now(),
     fixtures: states
   };
