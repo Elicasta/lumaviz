@@ -7,6 +7,7 @@ import { startSacnReceiver } from "./live/tauriSacn";
 import { DEFAULT_DIMENSIONS, DEFAULT_FIXTURES, DEFAULT_OBJECTS } from "./viz/defaults";
 import { LumaVizScene } from "./viz/scene";
 import type {
+  CustomCamera,
   FixtureDefinition,
   FixtureFrame,
   MaterialPreset,
@@ -110,6 +111,7 @@ export default function App() {
   const [material, setMaterial] = useState<MaterialPreset>("production-dark");
   const [units, setUnits] = useState<UnitSystem>("ft");
   const [activeView, setActiveView] = useState<ViewPreset>("foh");
+  const [customCameras, setCustomCameras] = useState<CustomCamera[]>([]);
   const [tool, setTool] = useState<TransformTool>("select");
   const [selected, setSelected] = useState<SelectionSnapshot | null>(null);
   const [sceneVersion, setSceneVersion] = useState(1);
@@ -304,7 +306,8 @@ export default function App() {
       fixtures,
       objects,
       material,
-      activeView
+      activeView,
+      customCameras
     }));
   }
 
@@ -318,6 +321,7 @@ export default function App() {
       objects?: SceneObject[];
       material?: MaterialPreset;
       activeView?: ViewPreset;
+      customCameras?: CustomCamera[];
     };
 
     if (saved.dimensions) setDimensions(saved.dimensions);
@@ -325,6 +329,7 @@ export default function App() {
     if (saved.objects) setObjects(saved.objects);
     if (saved.material) setMaterial(saved.material);
     if (saved.activeView) setActiveView(saved.activeView);
+    if (saved.customCameras) setCustomCameras(saved.customCameras);
 
     setSelected(null);
     setSceneVersion((value) => value + 1);
@@ -337,6 +342,7 @@ export default function App() {
     setSelectedObjectId(null);
     setMaterial("production-dark");
     setActiveView("foh");
+    setCustomCameras([]);
     setSelected(null);
     setSceneVersion((value) => value + 1);
   }
@@ -406,6 +412,22 @@ export default function App() {
   function setView(view: ViewPreset) {
     setActiveView(view);
     sceneRef.current?.setView(view);
+  }
+
+  function saveCustomCamera() {
+    const viz = sceneRef.current;
+    if (!viz) return;
+    const camera = viz.captureCamera("CAM " + (customCameras.length + 1));
+    setCustomCameras((current) => [...current, camera]);
+  }
+
+  function recallCustomCamera(camera: CustomCamera) {
+    sceneRef.current?.applyCustomCamera(camera);
+    setActiveView("free");
+  }
+
+  function deleteCustomCamera(id: string) {
+    setCustomCameras((current) => current.filter((camera) => camera.id !== id));
   }
 
   async function requestFullscreen() {
@@ -825,8 +847,28 @@ export default function App() {
                   <span>{camera.description}</span>
                 </button>
               ))}
+
+              {customCameras.length > 0 && (
+                <div className="tree-label camera-custom-label">CUSTOM</div>
+              )}
+
+              {customCameras.map((camera) => (
+                <div className="custom-camera-row" key={camera.id}>
+                  <button className="camera-card" onClick={() => recallCustomCamera(camera)}>
+                    <strong>{camera.name}</strong>
+                    <span>Saved production position</span>
+                  </button>
+                  <button
+                    className="camera-delete"
+                    onClick={() => deleteCustomCamera(camera.id)}
+                    title={"Delete " + camera.name}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
             </div>
-            <button className="add-object">＋ SAVE CUSTOM CAMERA</button>
+            <button className="add-object" onClick={saveCustomCamera}>＋ SAVE CUSTOM CAMERA</button>
           </aside>
 
           <Viewport canvasRef={canvasRef} activeView={activeView} units={units} />
