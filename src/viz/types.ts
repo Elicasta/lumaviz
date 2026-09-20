@@ -32,12 +32,20 @@ export interface SceneDimensions {
   drapeHeight: number;
 }
 
+export interface FixturePatch {
+  enabled: boolean;
+  universe: number;
+  address: number;
+  profileId: string;
+}
+
 export interface FixtureDefinition {
   id: string;
   name: string;
   kind: FixtureKind;
   position: Vec3;
   rotation: Vec3;
+  patch: FixturePatch;
 }
 
 export interface FixtureState {
@@ -56,6 +64,14 @@ export interface FixtureFrame {
   sequence: number;
   timestamp: number;
   fixtures: FixtureState[];
+}
+
+export interface ArtNetDmxPacket {
+  universe: number;
+  sequence: number;
+  physical: number;
+  data: number[];
+  source: string;
 }
 
 export interface SelectionSnapshot extends FixtureDefinition {
