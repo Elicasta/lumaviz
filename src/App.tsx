@@ -89,6 +89,8 @@ export default function App() {
   const sceneRef = useRef<LumaVizScene | null>(null);
   const cleanupRef = useRef<null | (() => void | Promise<void>)>(null);
   const directRef = useRef<LumaRigConnection | null>(null);
+  const lastFrameRef = useRef<FixtureFrame | null>(null);
+  const fixturesRef = useRef<FixtureDefinition[]>(fixtures);
 
   const [page, setPage] = useState<PageId>("visualize");
   const [dimensions, setDimensions] = useState<SceneDimensions>({ ...DEFAULT_DIMENSIONS });
@@ -106,6 +108,10 @@ export default function App() {
   const [lastPacketSource, setLastPacketSource] = useState("");
 
   useEffect(() => {
+    fixturesRef.current = fixtures;
+  }, [fixtures]);
+
+  useEffect(() => {
     if (!isViewportPage(page) || !canvasRef.current) return;
 
     const viz = new LumaVizScene(
@@ -119,6 +125,7 @@ export default function App() {
     sceneRef.current = viz;
     viz.setTool(tool);
     viz.setView(activeView);
+    if (lastFrameRef.current) viz.applyFrame(lastFrameRef.current);
 
     return () => {
       if (sceneRef.current === viz) sceneRef.current = null;
@@ -176,6 +183,7 @@ export default function App() {
   }
 
   function applyFrame(frame: FixtureFrame) {
+    lastFrameRef.current = frame;
     sceneRef.current?.applyFrame(frame);
   }
 
@@ -198,7 +206,7 @@ export default function App() {
         setConnectionState("connected");
         setConnectionMessage("Receiving Art-Net · Universe " + packet.universe);
         setLastPacketSource(packet.source);
-        applyFrame(fixtureFrameFromDmxPacket(packet, fixtures, "artnet"));
+        applyFrame(fixtureFrameFromDmxPacket(packet, fixturesRef.current, "artnet"));
       },
       (message) => {
         setConnectionState("error");
@@ -222,7 +230,7 @@ export default function App() {
         setConnectionState("connected");
         setConnectionMessage("Receiving sACN · Universe " + packet.universe);
         setLastPacketSource(packet.source);
-        applyFrame(fixtureFrameFromDmxPacket(packet, fixtures, "sacn"));
+        applyFrame(fixtureFrameFromDmxPacket(packet, fixturesRef.current, "sacn"));
       },
       (message) => {
         setConnectionState("error");
