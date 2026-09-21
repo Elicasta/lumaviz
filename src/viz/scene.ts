@@ -478,7 +478,19 @@ export class LumaVizScene {
       if (state.tilt !== undefined) runtime.tilt = state.tilt;
       if (state.beamAngle !== undefined) runtime.beamAngle = state.beamAngle;
 
-      const color = Color3.FromHexString(runtime.color);
+      let color = Color3.FromHexString(runtime.color);
+      if (state.emitters) {
+        const e = state.emitters;
+        // Approximate additive fixture emitters for visualization only.
+        // White is neutral, amber is warm orange, UV is represented as violet spill.
+        color = new Color3(
+          e.red + e.white + e.amber * 1.0 + e.uv * 0.22,
+          e.green + e.white + e.amber * 0.48,
+          e.blue + e.white + e.amber * 0.08 + e.uv * 0.82
+        );
+        const peak = Math.max(color.r, color.g, color.b, 1);
+        color = color.scale(1 / peak);
+      }
       runtime.light.diffuse = color;
       runtime.light.intensity = runtime.intensity * 14;
       runtime.light.angle = runtime.beamAngle * Math.PI / 180;
