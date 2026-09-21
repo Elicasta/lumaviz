@@ -140,12 +140,28 @@ export default function App() {
       material,
       setSelected,
       (transformed) => {
+        const before = fixturesRef.current.find((fixture) => fixture.id === transformed.id);
         fixturesRef.current = fixturesRef.current.map((fixture) =>
           fixture.id === transformed.id ? transformed : fixture
         );
         setFixtures((current) => current.map((fixture) =>
           fixture.id === transformed.id ? transformed : fixture
         ));
+        if (before && directRef.current) {
+          directRef.current.sendStageChange({
+            id: "lumaviz-" + Date.now() + "-" + transformed.id,
+            entityId: transformed.id,
+            entityKind: "fixture",
+            category: "fixturePosition",
+            source: "lumaviz",
+            baseRevision: sceneVersion,
+            createdAt: new Date().toISOString(),
+            summary: transformed.name + " position / rotation",
+            before: { position: before.position, rotation: before.rotation },
+            after: { position: transformed.position, rotation: transformed.rotation },
+            status: "pending"
+          });
+        }
       }
     );
 
@@ -339,7 +355,13 @@ export default function App() {
         setConnectionMessage("LumaRig Direct connected");
         setLastPacketSource(lumaRigUrl);
       },
-      onFrame: (frame) => {
+      onStageChange: (change) => {
+        // Stage changes from LumaRig are intentionally received separately from
+        // live lighting frames. The Stage Sync policy/revision layer decides
+        // when they mutate the LumaViz world.
+        console.info("LumaRig Stage Sync change", change);
+      },
+            onFrame: (frame) => {
         setPacketCount((count) => count + 1);
         // LumaRig fixture IDs and LumaViz scene IDs do not have to match. Direct
         // frames carry patch identity, so bind each semantic fixture to the scene
