@@ -12,6 +12,8 @@ use tauri::{AppHandle, Emitter, State};
 const ARTNET_PORT: u16 = 6454;
 const ARTNET_HEADER: &[u8; 8] = b"Art-Net\0";
 const ARTNET_OP_DMX: u16 = 0x5000;
+const LUMARIG_PING: &[u8] = b"LUMARIG-PING";
+const LUMAVIZ_ACK: &[u8] = b"LUMAVIZ-ACK";
 
 const SACN_PORT: u16 = 5568;
 const SACN_ACN_ID: &[u8; 12] = b"ASC-E1.17\0\0\0";
@@ -167,6 +169,11 @@ fn start_artnet_listener(
         while running.load(Ordering::Relaxed) {
             match socket.recv_from(&mut buffer) {
                 Ok((count, source)) => {
+                    if &buffer[..count] == LUMARIG_PING {
+                        let _ = socket.send_to(LUMAVIZ_ACK, source);
+                        let _ = app.emit("artnet-status", "lumarig-handshake");
+                        continue;
+                    }
                     if let Some(frame) = parse_artdmx(&buffer[..count], source.to_string()) {
                         let _ = app.emit("artnet-dmx", frame);
                     }
