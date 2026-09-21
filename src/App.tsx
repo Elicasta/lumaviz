@@ -310,6 +310,10 @@ export default function App() {
         setLastPacketSource(lumaRigUrl);
       },
       onFrame: (frame) => {
+        setPacketCount((count) => count + 1);
+        setMatchedFixtureCount(frame.fixtures.length);
+        setConnectionState("connected");
+        setConnectionMessage("LumaRig Direct LIVE · " + frame.fixtures.length + " semantic fixture" + (frame.fixtures.length === 1 ? "" : "s"));
         applyFrame(frame);
       },
       onClose: () => {
@@ -1000,18 +1004,18 @@ export default function App() {
           <div className="connection-grid">
             <ConnectionCard
               title="LumaRig Direct"
-              badge="COMING NEXT"
-              text="Semantic WebSocket transport is reserved for the next protocol step. Use Art-Net below for the current LumaRig connection."
+              badge="PREFERRED"
+              text="Native semantic fixture transport from LumaRig. No DMX decoding is required and Art-Net remains available as a fallback."
               active={source === "lumarig"}
             >
-              <input value={lumaRigUrl} onChange={(event) => setLumaRigUrl(event.target.value)} disabled />
-              <button className="secondary-button" disabled title="LumaRig Direct server is not in the current LumaRig build">DIRECT NOT ENABLED YET</button>
+              <input value={lumaRigUrl} onChange={(event) => setLumaRigUrl(event.target.value)} />
+              <button className="primary-button" onClick={connectDirect}>CONNECT LUMARIG DIRECT</button>
             </ConnectionCard>
 
             <ConnectionCard
               title="Art-Net"
-              badge="LUMARIG · CURRENT"
-              text="Current LumaRig connection. Listen on UDP 6454, then enable Art-Net Output in LumaRig Settings. PATCH converts channels into fixture behavior."
+              badge="DMX FALLBACK"
+              text="Standard DMX-over-network fallback. Listen on UDP 6454 and PATCH converts channels into fixture behavior."
               active={source === "artnet"}
             >
               <div className="protocol-detail">Patched universes: {patchedUniverses.join(", ") || "none"}</div>
