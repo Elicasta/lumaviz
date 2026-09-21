@@ -8,7 +8,8 @@ function isTauriRuntime(): boolean {
 
 export async function startArtNetReceiver(
   onPacket: (packet: DmxUniversePacket) => void,
-  onError?: (message: string) => void
+  onError?: (message: string) => void,
+  onStatus?: (status: string) => void
 ): Promise<UnlistenFn | null> {
   if (!isTauriRuntime()) {
     onError?.("Art-Net listener requires the desktop app.");
@@ -23,11 +24,16 @@ export async function startArtNetReceiver(
     onError?.(event.payload);
   });
 
+  const unlistenStatus = await listen<string>("artnet-status", (event) => {
+    onStatus?.(event.payload);
+  });
+
   try {
     await invoke("start_artnet_listener");
   } catch (error) {
     await unlistenPacket();
     await unlistenError();
+    await unlistenStatus();
     onError?.(String(error));
     return null;
   }
@@ -35,6 +41,7 @@ export async function startArtNetReceiver(
   return async () => {
     await unlistenPacket();
     await unlistenError();
+    await unlistenStatus();
     try {
       await invoke("stop_artnet_listener");
     } catch {
