@@ -2,6 +2,7 @@ import type { FixtureFrame } from "../viz/types";
 
 export interface LumaRigConnection {
   socket: WebSocket;
+  sendStageChange(change: unknown): void;
   close(): void;
 }
 
@@ -19,6 +20,7 @@ export function connectToLumaRig(
   handlers: {
     onOpen?: () => void;
     onFrame: (frame: FixtureFrame) => void;
+    onStageChange?: (change: unknown) => void;
     onClose?: () => void;
     onError?: (message: string) => void;
   }
@@ -37,7 +39,12 @@ export function connectToLumaRig(
   socket.addEventListener("message", (event) => {
     try {
       const message = JSON.parse(String(event.data)) as unknown;
-      if (isFixtureFrame(message)) {
+      if (message && typeof message === "object" && (message as { type?: string }).type === "stage-change") {
+        handlers.onStageChange?.((message as { change?: unknown }).change);
+        return;
+      }
+
+            if (isFixtureFrame(message)) {
         handlers.onFrame(message);
         return;
       }
@@ -65,6 +72,9 @@ export function connectToLumaRig(
 
   return {
     socket,
+    sendStageChange(change: unknown) {
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "stage-change", change }));
+    },
     close() {
       socket.close(1000, "LumaViz disconnect");
     }
