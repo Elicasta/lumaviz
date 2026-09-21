@@ -69,6 +69,7 @@ export interface FixtureState {
   id: string;
   intensity?: number;
   color?: string;
+  emitters?: { red: number; green: number; blue: number; white: number; amber: number; uv: number };
   pan?: number;
   tilt?: number;
   beamAngle?: number;
