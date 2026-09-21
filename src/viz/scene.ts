@@ -51,11 +51,14 @@ export class LumaVizScene {
 
   private dimensions: SceneDimensions;
   private fixtures = new Map<string, FixtureRuntime>();
+  private sceneObjects = new Map<string, { definition: SceneObject; mesh: Mesh }>();
+  private selectedObjectId: string | null = null;
   private gizmos: GizmoManager;
   private selectedId: string | null = null;
   private activeTool: TransformTool = "select";
   private onSelection?: (value: SelectionSnapshot | null) => void;
   private onFixtureTransform?: (value: FixtureDefinition) => void;
+  private onSceneObjectTransform?: (value: SceneObject) => void;
   private resizeObserver: ResizeObserver;
 
   constructor(
@@ -65,11 +68,13 @@ export class LumaVizScene {
     objects: SceneObject[],
     materialPreset: MaterialPreset,
     onSelection?: (value: SelectionSnapshot | null) => void,
-    onFixtureTransform?: (value: FixtureDefinition) => void
+    onFixtureTransform?: (value: FixtureDefinition) => void,
+    onSceneObjectTransform?: (value: SceneObject) => void
   ) {
     this.dimensions = dimensions;
     this.onSelection = onSelection;
     this.onFixtureTransform = onFixtureTransform;
+    this.onSceneObjectTransform = onSceneObjectTransform;
 
     this.engine = new Engine(canvas, true, {
       preserveDrawingBuffer: true,
@@ -114,6 +119,8 @@ export class LumaVizScene {
     this.scene.onPointerDown = (_, pick) => {
       const id = pick?.pickedMesh?.metadata?.fixtureId as string | undefined;
       if (id) this.selectFixture(id);
+      const objectId = pick?.pickedMesh?.metadata?.sceneObjectId as string | undefined;
+      if (objectId) this.selectSceneObject(objectId);
     };
 
     this.scene.onPointerUp = () => {
@@ -215,6 +222,7 @@ export class LumaVizScene {
           ? m.stage
           : m.wall;
       mesh.metadata = { sceneObjectId: object.id, sceneObjectKind: object.kind };
+      this.sceneObjects.set(object.id, { definition: { ...object, position: { ...object.position }, rotation: { ...object.rotation }, size: { ...object.size } }, mesh });
     }
 
     fixtures.forEach((fixture) => this.createFixture(fixture, m.fixture));
@@ -336,6 +344,33 @@ export class LumaVizScene {
     };
 
     this.fixtures.set(definition.id, runtime);
+  }
+
+  selectSceneObject(id: string): void {
+    const runtime = this.sceneObjects.get(id);
+    if (!runtime) return;
+    this.selectedObjectId = id;
+    this.selectedId = null;
+    this.onSelection?.(null);
+    if (this.activeTool === "select") this.gizmos.attachToNode(null);
+    else this.gizmos.attachToMesh(runtime.mesh);
+  }
+
+  updateSceneObject(definition: SceneObject): void {
+    const runtime = this.sceneObjects.get(definition.id);
+    if (!runtime) return;
+    runtime.definition = { ...definition, position: { ...definition.position }, rotation: { ...definition.rotation }, size: { ...definition.size } };
+    runtime.mesh.position.set(definition.position.x, definition.position.y, definition.position.z);
+    runtime.mesh.rotation.set(definition.rotation.x * Math.PI / 180, definition.rotation.y * Math.PI / 180, definition.rotation.z * Math.PI / 180);
+    runtime.mesh.scaling.set(definition.size.x / Math.max(runtime.mesh.getBoundingInfo().boundingBox.extendSize.x * 2, 0.001), definition.size.y / Math.max(runtime.mesh.getBoundingInfo().boundingBox.extendSize.y * 2, 0.001), definition.size.z / Math.max(runtime.mesh.getBoundingInfo().boundingBox.extendSize.z * 2, 0.001));
+  }
+
+  cameraSnapshot(): CustomCamera {
+    return this.captureCamera("CURRENT");
+  }
+
+  restoreCamera(camera: CustomCamera): void {
+    this.applyCustomCamera(camera);
   }
 
   captureCamera(name: string): CustomCamera {
