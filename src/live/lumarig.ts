@@ -3,6 +3,7 @@ import type { FixtureFrame } from "../viz/types";
 export interface LumaRigConnection {
   socket: WebSocket;
   sendStageChange(change: unknown): void;
+  sendPreviewFrame(dataUrl: string, view?: string): void;
   close(): void;
 }
 
@@ -31,7 +32,7 @@ export function connectToLumaRig(
     socket.send(JSON.stringify({
       type: "lumaviz.hello",
       protocolVersion: 1,
-      capabilities: ["fixture-frame-v1"]
+      capabilities: ["fixture-frame-v1", "preview-frame-v1"]
     }));
     handlers.onOpen?.();
   });
@@ -74,6 +75,9 @@ export function connectToLumaRig(
     socket,
     sendStageChange(change: unknown) {
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "stage-change", change }));
+    },
+    sendPreviewFrame(dataUrl: string, view?: string) {
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "preview-frame", dataUrl, view, timestamp: Date.now() }));
     },
     close() {
       socket.close(1000, "LumaViz disconnect");
