@@ -123,7 +123,6 @@ export default function App() {
   const [lastPacketSource, setLastPacketSource] = useState("");
   const [packetCount, setPacketCount] = useState(0);
   const [matchedFixtureCount, setMatchedFixtureCount] = useState(0);
-  const autoConnectStartedRef = useRef(false);
 
   useEffect(() => {
     fixturesRef.current = fixtures;
@@ -185,11 +184,14 @@ export default function App() {
   }, [source, page, sceneVersion, dimensions, fixtures, objects, material]);
 
   useEffect(() => {
-    if (!autoConnectStartedRef.current) {
-      autoConnectStartedRef.current = true;
-      void connectArtNet();
-    }
+    let cancelled = false;
+    const start = async () => {
+      if (cancelled) return;
+      await connectArtNet();
+    };
+    void start();
     return () => {
+      cancelled = true;
       void cleanupConnection();
     };
   }, []);
@@ -257,6 +259,9 @@ export default function App() {
         if (status === "listening") {
           setConnectionState("connected");
           setConnectionMessage("AUTO LINK READY · UDP 6454 · waiting for LumaRig");
+        } else if (status === "lumarig-handshake") {
+          setConnectionState("connected");
+          setConnectionMessage("LUMARIG ACKNOWLEDGED · UDP 6454");
         } else if (status === "stopped") {
           setConnectionState((current) => current === "error" ? current : "idle");
           setConnectionMessage((current) => current.includes("Could not bind") ? current : "Art-Net listener stopped");
