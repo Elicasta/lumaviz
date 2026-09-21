@@ -67,6 +67,16 @@ export interface FixtureDefinition {
 
 export interface FixtureState {
   id: string;
+  name?: string;
+  group?: string;
+  profileId?: string;
+  modeId?: string;
+  manufacturer?: string;
+  model?: string;
+  category?: string;
+  capabilities?: string[];
+  universe?: number;
+  address?: number;
   intensity?: number;
   color?: string;
   emitters?: { red: number; green: number; blue: number; white: number; amber: number; uv: number };
