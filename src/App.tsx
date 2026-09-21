@@ -341,10 +341,24 @@ export default function App() {
       },
       onFrame: (frame) => {
         setPacketCount((count) => count + 1);
-        setMatchedFixtureCount(frame.fixtures.length);
+        // LumaRig fixture IDs and LumaViz scene IDs do not have to match. Direct
+        // frames carry patch identity, so bind each semantic fixture to the scene
+        // fixture at the same universe/address. This prevents a whole fixture's
+        // channels from being interpreted as one unrelated LumaViz profile.
+        const sceneFixtures = fixturesRef.current;
+        const remapped = frame.fixtures.flatMap((state) => {
+          const exact = sceneFixtures.find((fixture) => fixture.id === state.id);
+          const patched = exact ?? (state.universe !== undefined && state.address !== undefined
+            ? sceneFixtures.find((fixture) => fixture.patch.enabled
+              && fixture.patch.universe === state.universe
+              && fixture.patch.address === state.address)
+            : undefined);
+          return patched ? [{ ...state, id: patched.id }] : [];
+        });
+        setMatchedFixtureCount(remapped.length);
         setConnectionState("connected");
-        setConnectionMessage("LumaRig Direct LIVE · " + frame.fixtures.length + " semantic fixture" + (frame.fixtures.length === 1 ? "" : "s"));
-        applyFrame(frame);
+        setConnectionMessage("LumaRig Direct LIVE · " + remapped.length + "/" + frame.fixtures.length + " fixtures patch-matched");
+        applyFrame({ ...frame, fixtures: remapped });
       },
       onClose: () => {
         setConnectionState("idle");
