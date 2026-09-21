@@ -1,5 +1,6 @@
 import {
   ArcRotateCamera,
+  Camera,
   Color3,
   Color4,
   Engine,
@@ -402,6 +403,22 @@ export class LumaVizScene {
       camera.target.y,
       camera.target.z
     ));
+  }
+
+  setPlanView(enabled: boolean): void {
+    if (enabled) {
+      this.camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+      const span = Math.max(this.dimensions.roomWidth, this.dimensions.roomDepth) * 0.58;
+      const aspect = this.engine.getRenderWidth() / Math.max(this.engine.getRenderHeight(), 1);
+      this.camera.orthoTop = span;
+      this.camera.orthoBottom = -span;
+      this.camera.orthoLeft = -span * aspect;
+      this.camera.orthoRight = span * aspect;
+      this.camera.setPosition(new Vector3(0, this.dimensions.ceilingHeight + 10, this.dimensions.stageDepth - this.dimensions.roomDepth / 2));
+      this.camera.setTarget(new Vector3(0, 0, this.dimensions.stageDepth - this.dimensions.roomDepth / 2));
+    } else {
+      this.camera.mode = Camera.PERSPECTIVE_CAMERA;
+    }
   }
 
   setView(preset: ViewPreset): void {
