@@ -116,11 +116,14 @@ export default function App() {
   const [tool, setTool] = useState<TransformTool>("select");
   const [selected, setSelected] = useState<SelectionSnapshot | null>(null);
   const [sceneVersion, setSceneVersion] = useState(1);
-  const [source, setSource] = useState<InputSource>("demo");
-  const [connectionState, setConnectionState] = useState<ConnectionState>("connected");
-  const [connectionMessage, setConnectionMessage] = useState("Internal demo source");
+  const [source, setSource] = useState<InputSource>("artnet");
+  const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
+  const [connectionMessage, setConnectionMessage] = useState("Starting automatic LumaRig link · UDP 6454");
   const [lumaRigUrl, setLumaRigUrl] = useState("ws://127.0.0.1:9460/lumaviz");
   const [lastPacketSource, setLastPacketSource] = useState("");
+  const [packetCount, setPacketCount] = useState(0);
+  const [matchedFixtureCount, setMatchedFixtureCount] = useState(0);
+  const autoConnectStartedRef = useRef(false);
 
   useEffect(() => {
     fixturesRef.current = fixtures;
@@ -182,6 +185,10 @@ export default function App() {
   }, [source, page, sceneVersion, dimensions, fixtures, objects, material]);
 
   useEffect(() => {
+    if (!autoConnectStartedRef.current) {
+      autoConnectStartedRef.current = true;
+      void connectArtNet();
+    }
     return () => {
       void cleanupConnection();
     };
@@ -234,10 +241,13 @@ export default function App() {
 
     const cleanup = await startArtNetReceiver(
       (packet) => {
+        const frame = fixtureFrameFromDmxPacket(packet, fixturesRef.current, "artnet");
+        setPacketCount((count) => count + 1);
+        setMatchedFixtureCount(frame.fixtures.length);
         setConnectionState("connected");
-        setConnectionMessage("Receiving Art-Net · Universe " + packet.universe);
+        setConnectionMessage("LumaRig LIVE · U" + packet.universe + " · " + frame.fixtures.length + " fixture" + (frame.fixtures.length === 1 ? "" : "s") + " matched");
         setLastPacketSource(packet.source);
-        applyFrame(fixtureFrameFromDmxPacket(packet, fixturesRef.current, "artnet"));
+        applyFrame(frame);
       },
       (message) => {
         setConnectionState("error");
@@ -246,7 +256,7 @@ export default function App() {
       (status) => {
         if (status === "listening") {
           setConnectionState("connected");
-          setConnectionMessage("Art-Net listener ready · UDP 6454 · waiting for DMX");
+          setConnectionMessage("AUTO LINK READY · UDP 6454 · waiting for LumaRig");
         } else if (status === "stopped") {
           setConnectionState((current) => current === "error" ? current : "idle");
           setConnectionMessage((current) => current.includes("Could not bind") ? current : "Art-Net listener stopped");
@@ -467,6 +477,10 @@ export default function App() {
     }
   }
 
+  const linkDiagnostics = source === "artnet"
+    ? "PACKETS " + packetCount + " · MATCHED " + matchedFixtureCount + (lastPacketSource ? " · " + lastPacketSource : "")
+    : "";
+
   const sourceLabel = source === "lumarig"
     ? "LumaRig Direct"
     : source === "artnet"
@@ -509,6 +523,7 @@ export default function App() {
         <div className="connection-pill">
           <span className={"status-dot " + connectionClass} />
           <span>{sourceLabel}</span>
+          {linkDiagnostics && <small>{linkDiagnostics}</small>}
         </div>
       </header>
 
