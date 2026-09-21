@@ -242,6 +242,15 @@ export default function App() {
       (message) => {
         setConnectionState("error");
         setConnectionMessage(message);
+      },
+      (status) => {
+        if (status === "listening") {
+          setConnectionState("connected");
+          setConnectionMessage("Art-Net listener ready · UDP 6454 · waiting for DMX");
+        } else if (status === "stopped") {
+          setConnectionState((current) => current === "error" ? current : "idle");
+          setConnectionMessage((current) => current.includes("Could not bind") ? current : "Art-Net listener stopped");
+        }
       }
     );
 
@@ -931,18 +940,18 @@ export default function App() {
           <div className="connection-grid">
             <ConnectionCard
               title="LumaRig Direct"
-              badge="PREFERRED"
-              text="Semantic fixture frames over a local or LAN WebSocket session. No DMX decoding needed."
+              badge="COMING NEXT"
+              text="Semantic WebSocket transport is reserved for the next protocol step. Use Art-Net below for the current LumaRig connection."
               active={source === "lumarig"}
             >
-              <input value={lumaRigUrl} onChange={(event) => setLumaRigUrl(event.target.value)} />
-              <button className="primary-button" onClick={connectDirect}>CONNECT LUMARIG</button>
+              <input value={lumaRigUrl} onChange={(event) => setLumaRigUrl(event.target.value)} disabled />
+              <button className="secondary-button" disabled title="LumaRig Direct server is not in the current LumaRig build">DIRECT NOT ENABLED YET</button>
             </ConnectionCard>
 
             <ConnectionCard
               title="Art-Net"
-              badge="UDP 6454"
-              text="Listen for ArtDMX from LumaRig or another controller. PATCH converts channels into fixture behavior."
+              badge="LUMARIG · CURRENT"
+              text="Current LumaRig connection. Listen on UDP 6454, then enable Art-Net Output in LumaRig Settings. PATCH converts channels into fixture behavior."
               active={source === "artnet"}
             >
               <div className="protocol-detail">Patched universes: {patchedUniverses.join(", ") || "none"}</div>
