@@ -22,7 +22,7 @@ import type {
 import { displayDistance, inputDistance } from "./viz/units";
 
 type PageId = "build" | "patch" | "visualize" | "cameras" | "connect" | "monitor";
-type InputSource = "demo" | "lumarig" | "artnet" | "sacn" | "none";
+type InputSource = "demo" | "lumarig" | "vizbridge" | "artnet" | "sacn" | "none";
 type ConnectionState = "idle" | "connecting" | "connected" | "error";
 
 const PAGES: Array<{ id: PageId; label: string; description: string }> = [
@@ -236,8 +236,8 @@ export default function App() {
     setLastPacketSource("");
   }
 
-  function connectBridge() {
-    disconnectSource();
+  async function connectBridge() {
+    await cleanupConnection();
     setSource("vizbridge");
     setConnectionState("connecting");
     setConnectionMessage("Connecting to VizBridge · ws://127.0.0.1:9461/dmx");
