@@ -187,6 +187,21 @@ export default function App() {
   }, [tool]);
 
   useEffect(() => {
+    if (!directRef.current || connectionState !== "connected") return;
+    const timer = window.setInterval(() => {
+      const canvas = canvasRef.current;
+      const direct = directRef.current;
+      if (!canvas || !direct || canvas.width < 2 || canvas.height < 2) return;
+      try {
+        direct.sendPreviewFrame(canvas.toDataURL("image/jpeg", 0.68), activeView);
+      } catch {
+        // Preview relay is best-effort and must never interrupt visualization or DMX.
+      }
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [connectionState, activeView, page]);
+
+  useEffect(() => {
     if (source !== "demo") return;
 
     let raf = 0;
