@@ -27,6 +27,26 @@ function rgbHex(r: number, g: number, b: number, white = 0): string {
 
 export const FIXTURE_PROFILES: FixtureProfile[] = [
   {
+    id: "adj-mega-par-profile-plus-ch05",
+    name: "ADJ Mega Par Profile Plus · Ch05",
+    kind: "par",
+    footprint: 5,
+    decode(data, address) {
+      // LumaRig verified personality: R, G, B, UV, master dimmer.
+      const r = byte(data, address, 0);
+      const g = byte(data, address, 1);
+      const b = byte(data, address, 2);
+      const uv = byte(data, address, 3) / 255;
+      const dimmer = byte(data, address, 4) / 255;
+      return {
+        intensity: dimmer,
+        color: rgbHex(r, g, b),
+        emitters: { red: r / 255, green: g / 255, blue: b / 255, white: 0, amber: 0, uv },
+        beamAngle: 28
+      };
+    }
+  },
+  {
     id: "generic-rgbw-par-5ch",
     name: "Generic RGBW PAR · 5ch",
     kind: "par",
