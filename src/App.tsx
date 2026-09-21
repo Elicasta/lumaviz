@@ -816,7 +816,41 @@ export default function App() {
             </div>
           </aside>
 
-          <Viewport canvasRef={canvasRef} activeView={activeView} units={units} />
+          <div className="visualizer-center">
+            <div className="viewport-modebar">
+              <div className="mode-tabs">
+                <button className="active">3D VIEW</button>
+                <button disabled>2D PLAN</button>
+                <button onClick={() => setPage("build")}>STAGE</button>
+                <button onClick={() => setPage("build")}>MATERIALS</button>
+                <button onClick={() => setPage("cameras")}>SNAPSHOTS</button>
+              </div>
+              <div className="camera-mini">CAMERA <strong>{activeView.toUpperCase().replace("-", " ")}</strong></div>
+            </div>
+            <Viewport canvasRef={canvasRef} activeView={activeView} units={units} />
+            <div className="show-deck">
+              <div className="deck-transport">
+                <button className="transport-play" onClick={() => setPage("connect")}>▶</button>
+                <button>■</button>
+                <button>◀|</button>
+              </div>
+              <div className="deck-cue">
+                <small>LIVE INPUT</small>
+                <strong>{connectionState === "connected" ? "LumaRig / Art-Net" : "Waiting for source"}</strong>
+              </div>
+              <div className="deck-readout"><small>PACKETS</small><strong>{packetCount}</strong></div>
+              <div className="deck-readout"><small>MATCHED</small><strong>{matchedFixtureCount}/{fixtures.length}</strong></div>
+              <div className="deck-cues">
+                {["PRE SHOW", "BUILD", "SONG 1", "CHORUS", "INTRO LOOK", "VERSE 1"].map((label, index) => (
+                  <button key={label} className={index === 4 ? "active" : ""}><span>{index + 8}</span>{label}</button>
+                ))}
+              </div>
+              <div className="deck-link">
+                <span className={"status-dot " + connectionClass} />
+                <div><small>DMX</small><strong>{connectionState === "connected" ? "Connected" : connectionState}</strong></div>
+              </div>
+            </div>
+          </div>
 
           <aside className="inspector-panel">
             <PanelHeading title="INSPECTOR" />
@@ -954,6 +988,12 @@ export default function App() {
               <strong>{sourceLabel}</strong>
               <span>{connectionMessage}</span>
               {lastPacketSource && <small>{lastPacketSource}</small>}
+              <div className="connection-metrics">
+                <span><b>{packetCount}</b> packets</span>
+                <span><b>{matchedFixtureCount}</b> matched fixtures</span>
+                <span><b>{patchedUniverses.length}</b> patched universe{patchedUniverses.length === 1 ? "" : "s"}</span>
+                <span><b>6454</b> UDP port</span>
+              </div>
             </div>
           </div>
 
@@ -1030,7 +1070,7 @@ export default function App() {
           <div>{fixtures.length} fixtures</div>
           <div>{patchedUniverses.length} universe{patchedUniverses.length === 1 ? "" : "s"}</div>
           <div className="status-spacer" />
-          <div>v0.1.0</div>
+          <div>v0.2.0</div>
         </footer>
       )}
     </main>
