@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { connectVizBridge } from "./live/vizbridge";
 import { FIXTURE_PROFILES } from "./fixtures/profiles";
 import { fixtureFrameFromDmxPacket } from "./live/artnet";
 import { connectToLumaRig, type LumaRigConnection } from "./live/lumarig";
@@ -233,6 +234,35 @@ export default function App() {
     setConnectionState("connected");
     setConnectionMessage("Internal demo source");
     setLastPacketSource("");
+  }
+
+  function connectBridge() {
+    disconnectSource();
+    setSource("vizbridge");
+    setConnectionState("connecting");
+    setConnectionMessage("Connecting to VizBridge · ws://127.0.0.1:9461/dmx");
+    const cleanup = connectVizBridge("ws://127.0.0.1:9461/dmx", {
+      onOpen: () => {
+        setConnectionState("connected");
+        setConnectionMessage("VizBridge connected · waiting for Art-Net");
+      },
+      onClose: () => {
+        setConnectionState("idle");
+        setConnectionMessage("VizBridge disconnected");
+      },
+      onError: (message) => {
+        setConnectionState("error");
+        setConnectionMessage(message);
+      },
+      onPacket: (packet) => {
+        setPacketCount((count) => count + 1);
+        setLastPacketSource("VizBridge · " + packet.source);
+        const frame = fixtureFrameFromDmxPacket(packet, fixturesRef.current, "artnet");
+        setMatchedFixtureCount(frame.fixtures.length);
+        applyFrame(frame);
+      }
+    });
+    cleanupRef.current = cleanup;
   }
 
   async function connectArtNet() {
@@ -1002,6 +1032,15 @@ export default function App() {
           </div>
 
           <div className="connection-grid">
+            <ConnectionCard
+              title="VizBridge"
+              badge="ART-NET BRIDGE"
+              text="Use VizBridge when it owns UDP 6454. LumaViz receives normalized DMX over a local WebSocket so the apps never compete for the Art-Net socket."
+              active={source === "vizbridge"}
+            >
+              <input value="ws://127.0.0.1:9461/dmx" disabled />
+              <button className="primary-button" onClick={connectBridge}>CONNECT VIZBRIDGE</button>
+            </ConnectionCard>
             <ConnectionCard
               title="LumaRig Direct"
               badge="PREFERRED"
