@@ -5,7 +5,11 @@ export interface LocationPreset {
   id:string; name:string; venue:string; version:number; estimated:boolean; notes:string[];
   dimensions:SceneDimensions; material:MaterialPreset; objects:SceneObject[]; referenceFixtures:FixtureDefinition[]; cameras:CustomCamera[];
 }
-const object=(kind:SceneObjectKind,id:string,name:string,x:number,y:number,z:number,w:number,h:number,d:number):SceneObject=>({id,name,kind,position:{x:ft(x),y:ft(y),z:ft(z)},rotation:{x:0,y:0,z:0},size:{x:ft(w),y:ft(h),z:ft(d)}});\nconst box=(id:string,name:string,x:number,y:number,z:number,w:number,h:number,d:number):SceneObject=>object("box",id,name,x,y,z,w,h,d);\nconst display=(id:string,name:string,x:number,y:number,z:number,w:number,h:number,d=.08):SceneObject=>object("display",id,name,x,y,z,w,h,d);\nconst speaker=(id:string,name:string,x:number,y:number,z:number,w:number,h:number,d:number):SceneObject=>object("speaker",id,name,x,y,z,w,h,d);\nconst pulpit=(id:string,name:string,x:number,y:number,z:number,w:number,h:number,d:number):SceneObject=>object("pulpit",id,name,x,y,z,w,h,d);
+const object=(kind:SceneObjectKind,id:string,name:string,x:number,y:number,z:number,w:number,h:number,d:number):SceneObject=>({id,name,kind,position:{x:ft(x),y:ft(y),z:ft(z)},rotation:{x:0,y:0,z:0},size:{x:ft(w),y:ft(h),z:ft(d)}});
+const box=(id:string,name:string,x:number,y:number,z:number,w:number,h:number,d:number):SceneObject=>object("box",id,name,x,y,z,w,h,d);
+const display=(id:string,name:string,x:number,y:number,z:number,w:number,h:number,d=.08):SceneObject=>object("display",id,name,x,y,z,w,h,d);
+const speaker=(id:string,name:string,x:number,y:number,z:number,w:number,h:number,d:number):SceneObject=>object("speaker",id,name,x,y,z,w,h,d);
+const pulpit=(id:string,name:string,x:number,y:number,z:number,w:number,h:number,d:number):SceneObject=>object("pulpit",id,name,x,y,z,w,h,d);
 const platform=(id:string,name:string,x:number,y:number,z:number,w:number,h:number,d:number):SceneObject=>({id,name,kind:"platform",position:{x:ft(x),y:ft(y),z:ft(z)},rotation:{x:0,y:0,z:0},size:{x:ft(w),y:ft(h),z:ft(d)}});
 const par=(id:string,name:string,x:number,y:number,z:number,address:number):FixtureDefinition=>({id,name,kind:"par",position:{x:ft(x),y:ft(y),z:ft(z)},rotation:{x:-90,y:0,z:0},patch:{enabled:false,universe:1,address,profileId:"generic-rgbw-par",modeId:"5ch-drgbw"}});
 
