@@ -438,7 +438,7 @@ export default function App() {
         setConnectionMessage("LumaRig Direct connected");
         setLastPacketSource(lumaRigUrl);
       },
-      onSharedShowActivation: (value) => { if (!isSharedShowActivation(value)) return; setSharedShowRevision(value.revision); setSharedShowName(value.showId); if (value.locationId) loadLocation(value.locationId); setConnectionMessage("Shared show loaded · outputs unchanged"); },
+      onSharedShowActivation: (value) => { if (!isSharedShowActivation(value)) return; setSharedShowRevision(value.revision); setSharedShowName(value.showId); const location=value.locationId?LOCATION_PRESETS.find(item=>item.id===value.locationId):undefined; if (value.locationId&&location) loadLocation(value.locationId); connection.sendSharedShowAck({type:"shared-show.ack",protocol:"shared-show-v1",showId:value.showId,app:"lumaviz",revision:value.revision,state:value.locationId&&!location?"missing":"loaded",detail:value.locationId&&!location?"Location preset missing":"Venue loaded; outputs unchanged",timestamp:Date.now()}); setConnectionMessage(value.locationId&&!location?"Shared show loaded · venue preset missing":"Shared show loaded · outputs unchanged"); },
       onSharedShowConflict: (value) => {
         const conflict = value as { revision?:number; reason?:string };
         if (typeof conflict.revision === "number") setSharedShowRevision(conflict.revision);
