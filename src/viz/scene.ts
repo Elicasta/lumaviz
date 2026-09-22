@@ -376,8 +376,7 @@ export class LumaVizScene {
     const runtime=this.sceneObjects.get(sceneObjectId); if(!runtime)return;
     const previous=runtime.mesh.material;
     if(!source){ return; }
-    const video=VideoTexture.CreateFromStreamAsync ? null : null;
-    const material=new PBRMaterial(sceneObjectId+"-display-material",this.scene);
+        const material=new PBRMaterial(sceneObjectId+"-display-material",this.scene);
     material.metallic=0; material.roughness=1;
     try {
       const texture=new VideoTexture(sceneObjectId+"-video",source,this.scene,true,true,Texture.TRILINEAR_SAMPLINGMODE,{autoPlay:true,muted:true,loop:true});
