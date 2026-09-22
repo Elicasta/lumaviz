@@ -252,7 +252,7 @@ export default function App() {
             summary:transformedObject.name+" position / rotation",
             before:null,
             after:{position:transformedObject.position,rotation:transformedObject.rotation,size:transformedObject.size},
-            status:"pending"
+            status:"pending" as const
           });
           const nextRevision=stageRevisionRef.current+1;
           stageRevisionRef.current=nextRevision;
@@ -622,14 +622,14 @@ export default function App() {
     const nextRevision=Math.max(stageRevisionRef.current+1,change.baseRevision+1);
     stageRevisionRef.current=nextRevision;
     setStageRevision(nextRevision);
-    setStageChanges(current=>current.map(item=>item.id===change.id?{...item,status:approved?"approved":"applied"}:item));
+    setStageChanges(current=>current.map(item=>item.id===change.id?{...item,status:approved?("approved" as const):("applied" as const)}:item));
     if(rebuild)setSceneVersion(version=>version+1);
     setConnectionMessage("Stage Sync · "+change.summary+" applied · R"+nextRevision);
     return true;
   }
 
   function rejectStageChange(id:string){
-    setStageChanges(current=>current.map(change=>change.id===id?{...change,status:"rejected"}:change));
+    setStageChanges(current=>current.map(change=>change.id===id?{...change,status:"rejected" as const}:change));
   }
 
   async function connectDirect() {
@@ -666,16 +666,16 @@ export default function App() {
         if(!change?.id || !change.entityId || typeof change.baseRevision!=="number")return;
         const conflict=stageChangeConflicts(stageRevisionRef.current,change);
         if(conflict){
-          setStageChanges(current=>[{...change,status:"conflict"},...current.filter(item=>item.id!==change.id)].slice(0,80));
+          setStageChanges(current=>[{...change,status:"conflict" as const},...current.filter(item=>item.id!==change.id)].slice(0,80));
           setConnectionMessage("Stage Sync conflict · "+change.summary+" · expected R"+stageRevisionRef.current);
           return;
         }
         if(canAutoApplyStageChange(stageSyncModeRef.current,change)){
-          setStageChanges(current=>[{...change,status:"pending"},...current.filter(item=>item.id!==change.id)].slice(0,80));
+          setStageChanges(current=>[{...change,status:"pending" as const},...current.filter(item=>item.id!==change.id)].slice(0,80));
           applyIncomingStageChange(change);
           return;
         }
-        setStageChanges(current=>[{...change,status:"pending"},...current.filter(item=>item.id!==change.id)].slice(0,80));
+        setStageChanges(current=>[{...change,status:"pending" as const},...current.filter(item=>item.id!==change.id)].slice(0,80));
         setConnectionMessage("Stage Sync · "+change.summary+" awaiting review");
       },
             onFrame: (frame) => {
