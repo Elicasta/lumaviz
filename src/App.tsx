@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { connectVizBridge } from "./live/vizbridge";
 import { FIXTURE_PROFILES } from "./fixtures/profiles";
 import { importGdtfFile } from "./fixtures/gdtf";
+import { LOCATION_PRESETS } from "./locations/presets";
 import { fixtureFrameFromDmxPacket } from "./live/artnet";
 import { connectToLumaRig, type LumaRigConnection } from "./live/lumarig";
 import { startArtNetReceiver } from "./live/tauriArtNet";
@@ -136,6 +137,7 @@ export default function App() {
   const [sharedShowRevision, setSharedShowRevision] = useState(1);
   const [sharedShowName, setSharedShowName] = useState("Local Scene");
   const [sharedShowLibrary, setSharedShowLibrary] = useState<Array<{id:string;name:string;savedAt:string;status:string}>>([]);
+  const [activeLocationId, setActiveLocationId] = useState<string>("");
 
   useEffect(() => {
     fixturesRef.current = fixtures;
@@ -274,6 +276,17 @@ export default function App() {
 
     directRef.current?.close();
     directRef.current = null;
+  }
+
+  function loadLocation(locationId:string) {
+    const location=LOCATION_PRESETS.find(item=>item.id===locationId); if(!location) return;
+    setActiveLocationId(location.id);
+    setDimensions({...location.dimensions});
+    setObjects(location.objects.map(object=>({...object,position:{...object.position},rotation:{...object.rotation},size:{...object.size}})));
+    setMaterial(location.material);
+    setCustomCameras(location.cameras.map(camera=>({...camera,position:{...camera.position},target:{...camera.target}})));
+    setSceneVersion(version=>version+1);
+    directRef.current?.sendStageChange({type:"shared-location.update",source:"lumaviz",revision:sharedShowRevision+1,location:{id:location.id,name:location.name,version:location.version,estimated:location.estimated,dimensions:location.dimensions,objects:location.objects,cameras:location.cameras}});
   }
 
   function duplicateSelected() {
@@ -1230,7 +1243,7 @@ export default function App() {
         </section>
       )}
 
-      {page === "library" && <section className="library-page"><header className="section-heading"><div><span>SHARED SHOW LIBRARY</span><h2>{sharedShowName}</h2><small>Revision {sharedShowRevision} · synchronized with LumaRig Direct</small></div></header><div className="shared-library-grid">{sharedShowLibrary.length ? sharedShowLibrary.map((item) => <article key={item.id}><span>{item.status === "template" ? "TEMPLATE" : item.status === "show" ? "SERVICE SHOW" : "DRAFT"}</span><strong>{item.name}</strong><small>{new Date(item.savedAt).toLocaleString()}</small><button onClick={() => { setSharedShowName(item.name); setPage("patch"); }}>Open / Inspect</button></article>) : <div className="empty-state"><strong>No shared projects received yet</strong><span>Connect LumaRig Direct to receive templates and service shows.</span></div>}</div></section>}
+      {page === "library" && <section className="library-page"><header className="section-heading"><div><span>SHARED SHOW LIBRARY</span><h2>{sharedShowName}</h2><small>Revision {sharedShowRevision} · synchronized with LumaRig Direct</small></div></header><div className="location-picker"><label>LOCATION</label><select value={activeLocationId} onChange={e=>loadLocation(e.target.value)}><option value="">Custom / Current Scene</option>{LOCATION_PRESETS.map(location=><option key={location.id} value={location.id}>{location.name}{location.estimated?" · estimated":""}</option>)}</select>{activeLocationId&&<small>Photo-derived geometry · shared with LumaRig · measurements can be refined later</small>}</div><div className="shared-library-grid">{sharedShowLibrary.length ? sharedShowLibrary.map((item) => <article key={item.id}><span>{item.status === "template" ? "TEMPLATE" : item.status === "show" ? "SERVICE SHOW" : "DRAFT"}</span><strong>{item.name}</strong><small>{new Date(item.savedAt).toLocaleString()}</small><button onClick={() => { setSharedShowName(item.name); setPage("patch"); }}>Open / Inspect</button></article>) : <div className="empty-state"><strong>No shared projects received yet</strong><span>Connect LumaRig Direct to receive templates and service shows.</span></div>}</div></section>}
 
       {page === "monitor" && (
         <section className="monitor-page">
