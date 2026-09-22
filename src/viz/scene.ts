@@ -120,9 +120,9 @@ export class LumaVizScene {
     this.buildScene(fixtures, objects, materialPreset);
     this.setView("foh");
 
-    this.scene.onPointerDown = (_, pick) => {
+    this.scene.onPointerDown = (event, pick) => {
       const id = pick?.pickedMesh?.metadata?.fixtureId as string | undefined;
-      if (id) this.selectFixture(id, Boolean((this.scene as any).getEngine?.().getInputElement && ((event as any)?.shiftKey)));
+      if (id) this.selectFixture(id, Boolean((event as PointerEvent)?.shiftKey));
       const objectId = pick?.pickedMesh?.metadata?.sceneObjectId as string | undefined;
       if (objectId) this.selectSceneObject(objectId);
     };
@@ -461,8 +461,7 @@ export class LumaVizScene {
   setSnap(enabled: boolean, step = this.snapStep): void {
     this.snapEnabled = enabled;
     this.snapStep = Math.max(0.01, step);
-    this.gizmos.gizmos.positionGizmo?.xGizmo.dragBehavior.onDragObservable;
-    const snap = enabled ? this.snapStep : 0;
+     const snap = enabled ? this.snapStep : 0;
     if (this.gizmos.gizmos.positionGizmo) this.gizmos.gizmos.positionGizmo.snapDistance = snap;
     if (this.gizmos.gizmos.rotationGizmo) this.gizmos.gizmos.rotationGizmo.snapDistance = enabled ? Math.PI / 12 : 0;
   }
