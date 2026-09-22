@@ -54,6 +54,7 @@ export interface FixturePatch {
   universe: number;
   address: number;
   profileId: string;
+  modeId?: string;
 }
 
 export interface FixtureDefinition {
