@@ -64,7 +64,7 @@ export const DEFAULT_FIXTURES: FixtureDefinition[] = [
     kind: "moving-head",
     position: { x: feetToMeters(9), y: feetToMeters(2.7), z: feetToMeters(11) },
     rotation: { x: 0, y: 0, z: 0 },
-    patch: { enabled: true, universe: 1, address: 30, profileId: "generic-moving-head", modeId: "14ch-common" }
+    patch: { enabled: true, universe: 1, address: 35, profileId: "generic-moving-head", modeId: "14ch-common" }
   }
 ];
 
