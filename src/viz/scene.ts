@@ -210,18 +210,20 @@ export class LumaVizScene {
     );
     drape.material = m.drape;
 
-    const screen = MeshBuilder.CreatePlane("screen", {
-      width: d.screenWidth,
-      height: d.screenHeight,
-      sideOrientation: Mesh.DOUBLESIDE
-    }, this.scene);
-    screen.position.set(
-      0,
-      d.stageHeight + d.screenBottom + d.screenHeight / 2,
-      d.stageDepth - 0.31
-    );
-    screen.rotation.y = Math.PI;
-    screen.material = m.screen;
+    if (!objects.some((object) => object.kind === "display")) {
+      const screen = MeshBuilder.CreatePlane("screen", {
+        width: d.screenWidth,
+        height: d.screenHeight,
+        sideOrientation: Mesh.DOUBLESIDE
+      }, this.scene);
+      screen.position.set(
+        0,
+        d.stageHeight + d.screenBottom + d.screenHeight / 2,
+        d.stageDepth - 0.31
+      );
+      screen.rotation.y = Math.PI;
+      screen.material = m.screen;
+    }
 
     for (const object of objects) {
       const mesh = object.kind === "display"
