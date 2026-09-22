@@ -603,6 +603,20 @@ export class LumaVizScene {
     this.onSelection?.(null);
   }
 
+  updateFixtureTransform(id: string, position?: {x:number;y:number;z:number}, rotation?: {x:number;y:number;z:number}): void {
+    const runtime=this.fixtures.get(id);
+    if(!runtime)return;
+    if(position){
+      runtime.root.position.set(position.x,position.y,position.z);
+      runtime.definition.position={...position};
+    }
+    if(rotation){
+      runtime.root.rotation.set(rotation.x*Math.PI/180,rotation.y*Math.PI/180,rotation.z*Math.PI/180);
+      runtime.definition.rotation={...rotation};
+    }
+    if(this.selectedId===id)this.emitSelection(runtime);
+  }
+
   updateSelectedPosition(axis: "x" | "y" | "z", value: number): void {
     if (!this.selectedId) return;
     const runtime = this.fixtures.get(this.selectedId);
