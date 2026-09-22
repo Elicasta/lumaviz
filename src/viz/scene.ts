@@ -309,6 +309,36 @@ export class LumaVizScene {
       head.parent = aimNode;
       head.material = material;
       head.metadata = { fixtureId: definition.id };
+    } else if (definition.kind === "bar") {
+      const body = MeshBuilder.CreateBox(`${definition.id}-bar`, {
+        width: 1.05,
+        height: 0.14,
+        depth: 0.18
+      }, this.scene);
+      body.parent = aimNode;
+      body.material = material;
+      body.metadata = { fixtureId: definition.id };
+      for (let index = 0; index < 8; index += 1) {
+        const lens = MeshBuilder.CreateCylinder(`${definition.id}-lens-${index}`, {
+          height: 0.02,
+          diameter: 0.08,
+          tessellation: 20
+        }, this.scene);
+        lens.rotation.x = Math.PI / 2;
+        lens.position.set(-0.43 + index * 0.123, 0, -0.1);
+        lens.parent = aimNode;
+        lens.material = material;
+        lens.metadata = { fixtureId: definition.id };
+      }
+    } else if (definition.kind === "blinder") {
+      const body = MeshBuilder.CreateBox(`${definition.id}-blinder`, {
+        width: 0.7,
+        height: 0.28,
+        depth: 0.18
+      }, this.scene);
+      body.parent = aimNode;
+      body.material = material;
+      body.metadata = { fixtureId: definition.id };
     } else {
       const can = MeshBuilder.CreateCylinder(`${definition.id}-can`, {
         height: 0.42,
