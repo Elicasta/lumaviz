@@ -23,6 +23,7 @@ import type {
   ViewPreset
 } from "./viz/types";
 import { displayDistance, inputDistance } from "./viz/units";
+import { isSharedShowActivation } from "./core/shared-show";
 
 type PageId = "build" | "patch" | "visualize" | "cameras" | "screens" | "connect" | "library" | "monitor";
 type InputSource = "demo" | "lumarig" | "vizbridge" | "artnet" | "sacn" | "none";
@@ -437,6 +438,7 @@ export default function App() {
         setConnectionMessage("LumaRig Direct connected");
         setLastPacketSource(lumaRigUrl);
       },
+      onSharedShowActivation: (value) => { if (!isSharedShowActivation(value)) return; setSharedShowRevision(value.revision); setSharedShowName(value.showId); if (value.locationId) loadLocation(value.locationId); setConnectionMessage("Shared show loaded · outputs unchanged"); },
       onSharedShowConflict: (value) => {
         const conflict = value as { revision?:number; reason?:string };
         if (typeof conflict.revision === "number") setSharedShowRevision(conflict.revision);
