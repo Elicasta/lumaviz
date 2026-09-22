@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { connectVizBridge } from "./live/vizbridge";
-import { FIXTURE_PROFILES } from "./fixtures/profiles";
+import { FIXTURE_PROFILES, registerFixtureProfile } from "./fixtures/profiles";
 import { importGdtfFile } from "./fixtures/gdtf";
 import { validatePatch } from "./fixtures/patch-validation";
 import { LOCATION_PRESETS } from "./locations/presets";
@@ -359,6 +359,10 @@ export default function App() {
 
   const patchReport = useMemo(() => validatePatch(fixtures), [fixtures]);
   const displayMedia = useMemo(() => new Map(displaySurfaces.map(surface => [surface.id, resolveStudioMediaSource(studioFrame, surface.sourceOutputId)])), [displaySurfaces, studioFrame]);
+  const selectedProfile=useMemo(()=>selected ? FIXTURE_PROFILES.find(profile=>profile.id===selected.patch.profileId) : undefined,[selected]);
+  const selectedMode=useMemo(()=>selectedProfile?.modes.find(mode=>mode.id===selected?.patch.modeId) ?? selectedProfile?.modes[0],[selectedProfile,selected]);
+  const selectedPatchSpan=useMemo(()=>selected ? patchReport.spans.find(span=>span.fixtureId===selected.id) : undefined,[patchReport,selected]);
+  const selectedPatchConflict=useMemo(()=>selected ? patchReport.conflicts.some(conflict=>conflict.fixtures.some(item=>item.id===selected.id)) || patchReport.outOfRange.some(span=>span.fixtureId===selected.id) : false,[patchReport,selected]);
 
   useEffect(() => {
     const viz=sceneRef.current;
@@ -423,8 +427,9 @@ export default function App() {
   async function importFixtureFile(file: File) {
     try {
       const profile = await importGdtfFile(file);
-      if (!FIXTURE_PROFILES.some(item => item.id === profile.id)) FIXTURE_PROFILES.push(profile);
+      registerFixtureProfile(profile);
       setFixtureSearch(profile.model);
+      setConnectionMessage("Fixture profile imported · "+profile.manufacturer+" "+profile.model);
     } catch (error) { console.error(error); }
   }
 
@@ -1176,7 +1181,7 @@ export default function App() {
 
           <div className="patch-table">
             <div className="patch-row patch-head">
-              <span>Fixture</span><span>Profile</span><span>Universe</span><span>Address</span><span>Enabled</span><span />
+              <span>Fixture</span><span>Profile</span><span>Mode</span><span>Universe</span><span>Address</span><span>Footprint</span><span>Enabled</span><span />
             </div>
             {fixtures.map((fixture) => (
               <div className={"patch-row " + (patchReport.conflicts.some(conflict=>conflict.fixtures.some(item=>item.id===fixture.id)) || patchReport.outOfRange.some(span=>span.fixtureId===fixture.id) ? "patch-conflict" : "")} key={fixture.id}>
@@ -1199,6 +1204,12 @@ export default function App() {
                     <option key={profile.id} value={profile.id}>{profile.name}</option>
                   ))}
                 </select>
+                <select
+                  value={fixture.patch.modeId ?? FIXTURE_PROFILES.find(profile=>profile.id===fixture.patch.profileId)?.modes[0]?.id ?? ""}
+                  onChange={(event)=>updateFixture(fixture.id,current=>({...current,patch:{...current.patch,modeId:event.target.value}}))}
+                >
+                  {FIXTURE_PROFILES.find(profile=>profile.id===fixture.patch.profileId)?.modes.map(mode=><option key={mode.id} value={mode.id}>{mode.name}</option>)}
+                </select>
                 <input
                   type="number"
                   min="1"
@@ -1219,6 +1230,7 @@ export default function App() {
                     patch: { ...current.patch, address: Math.max(1, Math.min(512, Number(event.target.value) || 1)) }
                   }))}
                 />
+                <span className="patch-footprint-readout">{(() => { const span=patchReport.spans.find(item=>item.fixtureId===fixture.id); return span ? `${span.start}–${span.end}` : "—"; })()}</span>
                 <label className="switch-label">
                   <input
                     type="checkbox"
@@ -1319,7 +1331,7 @@ export default function App() {
                 {inspectorTab === "properties" && <section className="inspector-section">
                   <h3>FIXTURE PROFILE</h3>
                   <input className="fixture-search" placeholder="Search manufacturer or model…" value={fixtureSearch} onChange={e=>setFixtureSearch(e.target.value)} />
-                  <label className="gdtf-import">IMPORT GDTF/XML<input type="file" accept=".gdtf,.xml" onChange={e=>e.target.files?.[0] && void importFixtureFile(e.target.files[0])}/></label>
+                  <label className="gdtf-import">IMPORT GDTF / XML<input type="file" accept=".gdtf,.xml" onChange={e=>e.target.files?.[0] && void importFixtureFile(e.target.files[0])}/></label>
                   <select value={selected.patch.profileId} onChange={(event) => {
                     const profile = FIXTURE_PROFILES.find((item) => item.id === event.target.value);
                     updateFixture(selected.id, (current) => ({ ...current, kind: profile?.kind ?? current.kind, patch: { ...current.patch, profileId: event.target.value, modeId: profile?.modes[0]?.id } }));
@@ -1327,9 +1339,20 @@ export default function App() {
                     {FIXTURE_PROFILES.filter(profile => !fixtureSearch || (profile.manufacturer+" "+profile.model).toLowerCase().includes(fixtureSearch.toLowerCase())).map((profile) => <option key={profile.id} value={profile.id}>{profile.manufacturer} · {profile.model}</option>)}
                   </select>
                   <h3>DMX MODE</h3>
-                  <select value={selected.patch.modeId ?? FIXTURE_PROFILES.find((profile) => profile.id === selected.patch.profileId)?.modes[0]?.id ?? ""} onChange={(event) => updateFixture(selected.id, (current) => ({ ...current, patch: { ...current.patch, modeId: event.target.value } }))}>
-                    {FIXTURE_PROFILES.find((profile) => profile.id === selected.patch.profileId)?.modes.map((mode) => <option key={mode.id} value={mode.id}>{mode.name} · {mode.channelCount}ch</option>)}
+                  <select value={selected.patch.modeId ?? selectedProfile?.modes[0]?.id ?? ""} onChange={(event) => updateFixture(selected.id, (current) => ({ ...current, patch: { ...current.patch, modeId: event.target.value } }))}>
+                    {selectedProfile?.modes.map((mode) => <option key={mode.id} value={mode.id}>{mode.name} · {mode.channelCount}ch</option>)}
                   </select>
+                  {selectedProfile && <div className="fixture-profile-summary">
+                    <div className="profile-summary-head"><span className={selectedProfile.verified?"verified":"unverified"}>{selectedProfile.verified?"VERIFIED / IMPORTED":"VERIFY MANUAL"}</span><strong>{selectedProfile.manufacturer} · {selectedProfile.model}</strong></div>
+                    <small>{selectedProfile.note}</small>
+                    <dl>
+                      <div><dt>Footprint</dt><dd>{selectedMode?.channelCount ?? 0} ch{selectedPatchSpan ? ` · ${selectedPatchSpan.start}–${selectedPatchSpan.end}` : ""}</dd></div>
+                      {selectedProfile.movement&&<div><dt>Movement</dt><dd>{selectedProfile.movement.panRangeDegrees}° pan · {selectedProfile.movement.tiltRangeDegrees}° tilt</dd></div>}
+                      {selectedProfile.optics&&<div><dt>Beam</dt><dd>{selectedProfile.optics.beamAngleMinDegrees}–{selectedProfile.optics.beamAngleMaxDegrees}°</dd></div>}
+                    </dl>
+                    <div className="capability-chips">{[...new Set(selectedMode?.channels.flatMap(channel=>channel.parameter?[channel.parameter]:[]) ?? [])].map(capability=><span key={capability}>{capability}</span>)}</div>
+                    {selectedPatchConflict&&<div className="selected-patch-warning">PATCH CONFLICT / OUT OF RANGE</div>}
+                  </div>}
                 </section>}
                 {inspectorTab === "properties" && <section className="inspector-section">
                   <h3>POSITION</h3>
