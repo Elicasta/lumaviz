@@ -448,7 +448,9 @@ export class LumaVizScene {
   }
 
   cameraSnapshot(): CustomCamera {
-    return this.captureCamera("CURRENT");
+    return this.planRestoreCamera
+      ? { ...this.planRestoreCamera, position: { ...this.planRestoreCamera.position }, target: { ...this.planRestoreCamera.target } }
+      : this.captureCamera("CURRENT");
   }
 
   restoreCamera(camera: CustomCamera): void {
