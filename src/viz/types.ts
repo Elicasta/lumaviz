@@ -60,6 +60,7 @@ export interface FixturePatch {
 export interface FixtureDefinition {
   id: string;
   name: string;
+  group?: string;
   kind: FixtureKind;
   position: Vec3;
   rotation: Vec3;
