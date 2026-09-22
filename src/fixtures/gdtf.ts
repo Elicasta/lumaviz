@@ -23,7 +23,7 @@ export function parseGdtfDescription(xmlText:string):FixtureProfile {
     const channels=channelEls.map((channel,index)=>{
       const logical=channel.querySelector("LogicalChannel");
       const fn=logical?.querySelector("ChannelFunction");
-      const attribute=text(logical,"Attribute",text(fn,"Attribute",text(logical,"Name","")));
+      const attribute=text(logical,"Attribute",text(fn ?? null,"Attribute",text(logical,"Name","")));
       const offsetRaw=text(channel,"Offset",String(index+1)).split(",")[0];
       const offset=Math.max(0,(Number(offsetRaw)||index+1)-1);
       return {offset,label:attribute||`Channel ${offset+1}`,parameter:parameter(attribute)};
