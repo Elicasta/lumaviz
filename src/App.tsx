@@ -283,6 +283,10 @@ export default function App() {
     setActiveLocationId(location.id);
     setDimensions({...location.dimensions});
     setObjects(location.objects.map(object=>({...object,position:{...object.position},rotation:{...object.rotation},size:{...object.size}})));
+    setFixtures(current => {
+      const retained=current.filter(fixture=>!fixture.id.startsWith("ad26-")&&!fixture.id.startsWith("cs-ceiling-"));
+      return [...retained,...location.referenceFixtures.map(fixture=>({...fixture,position:{...fixture.position},rotation:{...fixture.rotation},patch:{...fixture.patch,enabled:false}}))];
+    });
     setMaterial(location.material);
     setCustomCameras(location.cameras.map(camera=>({...camera,position:{...camera.position},target:{...camera.target}})));
     setSceneVersion(version=>version+1);
