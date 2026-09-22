@@ -56,6 +56,9 @@ export class LumaVizScene {
   private selectedObjectId: string | null = null;
   private gizmos: GizmoManager;
   private selectedId: string | null = null;
+  private selectedIds = new Set<string>();
+  private snapEnabled = true;
+  private snapStep = 0.25;
   private activeTool: TransformTool = "select";
   private onSelection?: (value: SelectionSnapshot | null) => void;
   private onFixtureTransform?: (value: FixtureDefinition) => void;
@@ -119,7 +122,7 @@ export class LumaVizScene {
 
     this.scene.onPointerDown = (_, pick) => {
       const id = pick?.pickedMesh?.metadata?.fixtureId as string | undefined;
-      if (id) this.selectFixture(id);
+      if (id) this.selectFixture(id, Boolean((this.scene as any).getEngine?.().getInputElement && ((event as any)?.shiftKey)));
       const objectId = pick?.pickedMesh?.metadata?.sceneObjectId as string | undefined;
       if (objectId) this.selectSceneObject(objectId);
     };
@@ -439,14 +442,42 @@ export class LumaVizScene {
     }
   }
 
-  selectFixture(id: string): void {
+  selectFixture(id: string, additive = false): void {
     const runtime = this.fixtures.get(id);
     if (!runtime) return;
-    this.selectedId = id;
+    if (!additive) this.selectedIds.clear();
+    if (additive && this.selectedIds.has(id)) this.selectedIds.delete(id);
+    else this.selectedIds.add(id);
+    this.selectedId = this.selectedIds.has(id) ? id : ([...this.selectedIds].at(-1) ?? null);
     if (this.activeTool !== "select") {
-      this.gizmos.attachToNode(runtime.root);
+      this.gizmos.attachToNode(this.selectedId ? this.fixtures.get(this.selectedId)?.root ?? null : null);
     }
-    this.emitSelection(runtime);
+    if (this.selectedId) this.emitSelection(this.fixtures.get(this.selectedId)!);
+    else this.onSelection?.(null);
+  }
+
+  getSelectedFixtureIds(): string[] { return [...this.selectedIds]; }
+
+  setSnap(enabled: boolean, step = this.snapStep): void {
+    this.snapEnabled = enabled;
+    this.snapStep = Math.max(0.01, step);
+    this.gizmos.gizmos.positionGizmo?.xGizmo.dragBehavior.onDragObservable;
+    const snap = enabled ? this.snapStep : 0;
+    if (this.gizmos.gizmos.positionGizmo) this.gizmos.gizmos.positionGizmo.snapDistance = snap;
+    if (this.gizmos.gizmos.rotationGizmo) this.gizmos.gizmos.rotationGizmo.snapDistance = enabled ? Math.PI / 12 : 0;
+  }
+
+  selectAllFixtures(): void {
+    this.selectedIds = new Set(this.fixtures.keys());
+    this.selectedId = [...this.selectedIds].at(-1) ?? null;
+    if (this.selectedId) this.emitSelection(this.fixtures.get(this.selectedId)!);
+  }
+
+  clearSelection(): void {
+    this.selectedIds.clear();
+    this.selectedId = null;
+    this.gizmos.attachToNode(null);
+    this.onSelection?.(null);
   }
 
   updateSelectedPosition(axis: "x" | "y" | "z", value: number): void {
