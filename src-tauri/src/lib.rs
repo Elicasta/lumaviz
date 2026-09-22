@@ -1,6 +1,7 @@
 use serde::Serialize;
 use std::{
-    net::{Ipv4Addr, UdpSocket},
+    io::Read,
+    net::{Ipv4Addr, TcpStream, UdpSocket},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -303,6 +304,37 @@ fn stop_sacn_listener(state: State<'_, ListenerState>) -> Result<(), String> {
     stop_artnet_listener(state)
 }
 
+
+#[tauri::command]
+fn start_lumastudio_media_listener(app: AppHandle) -> Result<(), String> {
+    std::thread::spawn(move || {
+        loop {
+            match TcpStream::connect("127.0.0.1:9462") {
+                Ok(mut stream) => {
+                    let _ = app.emit("lumastudio-media-status", "connected");
+                    loop {
+                        let mut len = [0u8; 4];
+                        if stream.read_exact(&mut len).is_err() { break; }
+                        let size = u32::from_be_bytes(len) as usize;
+                        if size == 0 || size > 4_000_000 { break; }
+                        let mut payload = vec![0u8; size];
+                        if stream.read_exact(&mut payload).is_err() { break; }
+                        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&payload) {
+                            let _ = app.emit("lumastudio-media", value);
+                        }
+                    }
+                    let _ = app.emit("lumastudio-media-status", "offline");
+                }
+                Err(_) => {
+                    let _ = app.emit("lumastudio-media-status", "offline");
+                    std::thread::sleep(Duration::from_secs(1));
+                }
+            }
+        }
+    });
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -311,7 +343,8 @@ pub fn run() {
             start_artnet_listener,
             stop_artnet_listener,
             start_sacn_listener,
-            stop_sacn_listener
+            stop_sacn_listener,
+            start_lumastudio_media_listener
         ])
         .run(tauri::generate_context!())
         .expect("error while running LumaViz");
