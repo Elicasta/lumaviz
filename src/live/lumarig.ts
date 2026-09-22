@@ -5,6 +5,7 @@ export interface LumaRigConnection {
   sendStageChange(change: unknown): void;
   sendPatchUpdate(mutation: unknown): void;
   sendPreviewFrame(dataUrl: string, view?: string): void;
+  sendSharedShowAck(ack: unknown): void;
   close(): void;
 }
 
@@ -92,6 +93,7 @@ export function connectToLumaRig(
     sendPatchUpdate(mutation: unknown) {
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(mutation));
     },
+    sendSharedShowAck(ack: unknown) { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(ack)); },
     sendPreviewFrame(dataUrl: string, view?: string) {
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "preview-frame", dataUrl, view, timestamp: Date.now() }));
     },
