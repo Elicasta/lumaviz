@@ -87,7 +87,8 @@ function makeFixture(index: number): FixtureDefinition {
       enabled: true,
       universe: 1,
       address: 1,
-      profileId: "generic-rgbw-par-5ch"
+      profileId: "generic-rgbw-par",
+      modeId: "5ch-drgbw"
     }
   };
 }
@@ -835,7 +836,7 @@ export default function App() {
                     updateFixture(fixture.id, (current) => ({
                       ...current,
                       kind: profile?.kind ?? current.kind,
-                      patch: { ...current.patch, profileId: event.target.value }
+                      patch: { ...current.patch, profileId: event.target.value, modeId: profile?.modes[0]?.id }
                     }));
                   }}
                 >
@@ -964,9 +965,13 @@ export default function App() {
                   <h3>FIXTURE PROFILE</h3>
                   <select value={selected.patch.profileId} onChange={(event) => {
                     const profile = FIXTURE_PROFILES.find((item) => item.id === event.target.value);
-                    updateFixture(selected.id, (current) => ({ ...current, kind: profile?.kind ?? current.kind, patch: { ...current.patch, profileId: event.target.value } }));
+                    updateFixture(selected.id, (current) => ({ ...current, kind: profile?.kind ?? current.kind, patch: { ...current.patch, profileId: event.target.value, modeId: profile?.modes[0]?.id } }));
                   }}>
                     {FIXTURE_PROFILES.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+                  </select>
+                  <h3>DMX MODE</h3>
+                  <select value={selected.patch.modeId ?? FIXTURE_PROFILES.find((profile) => profile.id === selected.patch.profileId)?.modes[0]?.id ?? ""} onChange={(event) => updateFixture(selected.id, (current) => ({ ...current, patch: { ...current.patch, modeId: event.target.value } }))}>
+                    {FIXTURE_PROFILES.find((profile) => profile.id === selected.patch.profileId)?.modes.map((mode) => <option key={mode.id} value={mode.id}>{mode.name} · {mode.channelCount}ch</option>)}
                   </select>
                 </section>}
                 {inspectorTab === "properties" && <section className="inspector-section">
@@ -999,7 +1004,7 @@ export default function App() {
                 </section>}
                 {inspectorTab === "dmx" && <section className="inspector-section data-block">
                   <h3>DMX PATCH</h3>
-                  <dl><div><dt>Profile</dt><dd>{FIXTURE_PROFILES.find((profile) => profile.id === selected.patch.profileId)?.name ?? selected.patch.profileId}</dd></div><div><dt>Universe</dt><dd>{selected.patch.universe}</dd></div><div><dt>Address</dt><dd>{selected.patch.address}</dd></div><div><dt>Enabled</dt><dd>{selected.patch.enabled ? "YES" : "NO"}</dd></div></dl>
+                  <dl><div><dt>Profile</dt><dd>{FIXTURE_PROFILES.find((profile) => profile.id === selected.patch.profileId)?.name ?? selected.patch.profileId}</dd></div><div><dt>Universe</dt><dd>{selected.patch.universe}</dd></div><div><dt>Mode</dt><dd>{FIXTURE_PROFILES.find((profile) => profile.id === selected.patch.profileId)?.modes.find((mode) => mode.id === selected.patch.modeId)?.name ?? selected.patch.modeId ?? "Default"}</dd></div><div><dt>Address</dt><dd>{selected.patch.address}</dd></div><div><dt>Enabled</dt><dd>{selected.patch.enabled ? "YES" : "NO"}</dd></div></dl>
                 </section>}
                 {inspectorTab === "live" && <section className="inspector-section data-block">
                   <h3>LIVE INPUT</h3>
