@@ -1,11 +1,11 @@
 import { feetToMeters as ft } from "../viz/units";
-import type { CustomCamera, FixtureDefinition, MaterialPreset, SceneDimensions, SceneObject } from "../viz/types";
+import type { CustomCamera, FixtureDefinition, MaterialPreset, SceneDimensions, SceneObject, SceneObjectKind } from "../viz/types";
 
 export interface LocationPreset {
   id:string; name:string; venue:string; version:number; estimated:boolean; notes:string[];
   dimensions:SceneDimensions; material:MaterialPreset; objects:SceneObject[]; referenceFixtures:FixtureDefinition[]; cameras:CustomCamera[];
 }
-const box=(id:string,name:string,x:number,y:number,z:number,w:number,h:number,d:number):SceneObject=>({id,name,kind:"box",position:{x:ft(x),y:ft(y),z:ft(z)},rotation:{x:0,y:0,z:0},size:{x:ft(w),y:ft(h),z:ft(d)}});
+const object=(kind:SceneObjectKind,id:string,name:string,x:number,y:number,z:number,w:number,h:number,d:number):SceneObject=>({id,name,kind,position:{x:ft(x),y:ft(y),z:ft(z)},rotation:{x:0,y:0,z:0},size:{x:ft(w),y:ft(h),z:ft(d)}});\nconst box=(id:string,name:string,x:number,y:number,z:number,w:number,h:number,d:number):SceneObject=>object("box",id,name,x,y,z,w,h,d);\nconst display=(id:string,name:string,x:number,y:number,z:number,w:number,h:number,d=.08):SceneObject=>object("display",id,name,x,y,z,w,h,d);\nconst speaker=(id:string,name:string,x:number,y:number,z:number,w:number,h:number,d:number):SceneObject=>object("speaker",id,name,x,y,z,w,h,d);\nconst pulpit=(id:string,name:string,x:number,y:number,z:number,w:number,h:number,d:number):SceneObject=>object("pulpit",id,name,x,y,z,w,h,d);
 const platform=(id:string,name:string,x:number,y:number,z:number,w:number,h:number,d:number):SceneObject=>({id,name,kind:"platform",position:{x:ft(x),y:ft(y),z:ft(z)},rotation:{x:0,y:0,z:0},size:{x:ft(w),y:ft(h),z:ft(d)}});
 const par=(id:string,name:string,x:number,y:number,z:number,address:number):FixtureDefinition=>({id,name,kind:"par",position:{x:ft(x),y:ft(y),z:ft(z)},rotation:{x:-90,y:0,z:0},patch:{enabled:false,universe:1,address,profileId:"generic-rgbw-par",modeId:"5ch-drgbw"}});
 
@@ -17,16 +17,16 @@ export const CORNERSTONE_MAIN_SANCTUARY:LocationPreset={
  objects:[
   platform("cs-stage","Main Platform",0,.625,19.5,24,1.25,9),
   box("cs-backwall","Blue Rear Accent Wall",0,5,23.7,24,10,.25),
-  box("cs-center-screen","Center Projection Screen",0,7.6,23.35,9,5.1,.18),
-  box("cs-tv-left","Left Display",-8,6.6,23.2,5,3,.22),
-  box("cs-tv-right","Right Display",8,6.6,23.2,5,3,.22),
+  display("cs-center-screen","Center Projection Screen",0,7.6,23.35,9,5.1,.18),
+  display("cs-tv-left","Left Display",-8,6.6,23.2,5,3,.22),
+  display("cs-tv-right","Right Display",8,6.6,23.2,5,3,.22),
   box("cs-door-left","Stage Left Door",-10.4,3.5,23.05,3,7,.25),
   box("cs-door-right","Stage Right Door",10.4,3.5,23.05,3,7,.25),
   box("cs-drum-shield","Drum Shield",-6.5,3.2,20.8,5.5,5.2,.08),
   box("cs-keyboard","Keyboard",6.7,3,19.8,5,3,.8),
-  box("cs-pulpit","Glass Pulpit",0,2.6,15.8,3.2,4.2,1.5),
-  box("cs-speaker-left","Wall Speaker Left",-14.3,7.2,13,2.2,3.8,1.8),
-  box("cs-speaker-right","Wall Speaker Right",14.3,7.2,13,2.2,3.8,1.8),
+  pulpit("cs-pulpit","Glass Pulpit",0,2.6,15.8,3.2,4.2,1.5),
+  speaker("cs-speaker-left","Wall Speaker Left",-14.3,7.2,13,2.2,3.8,1.8),
+  speaker("cs-speaker-right","Wall Speaker Right",14.3,7.2,13,2.2,3.8,1.8),
   box("cs-projector","Ceiling Projector",0,9.2,6.5,1.8,.7,1.5),
   box("cs-front-monitor-left","Floor Monitor Left",-5.8,1.3,15.2,2.8,1.2,1.8),
   box("cs-front-monitor-right","Floor Monitor Right",5.8,1.3,15.2,2.8,1.2,1.8)
@@ -57,16 +57,16 @@ export const ROSEN_SIGNATURE_2_AD26:LocationPreset={
   box("ad26-cove-line","Stage Cove Boundary",0,12,18,50,.08,.08),
   box("ad26-back-drape","10 ft Black Back Drape",0,5,27.5,42,10,.3),
   platform("ad26-pulpit-riser","8 in Pulpit Riser",0,.335,20,8,.67,6),
-  box("ad26-screen","180 in Projection Screen",0,7.2,27.15,15,8.44,.2),
-  box("ad26-pulpit","Black Pulpit",0,2.4,17.5,2.4,4.2,1.7),
+  display("ad26-screen","180 in Projection Screen",0,7.2,27.15,15,8.44,.2),
+  pulpit("ad26-pulpit","Black Pulpit",0,2.4,17.5,2.4,4.2,1.7),
   platform("ad26-choir-riser-a","Choir Riser A",-14,.5,23,14,1,4),
   platform("ad26-choir-riser-b","Choir Riser B",-14,1,25.2,14,2,4),
   platform("ad26-band-pit","Band Pit",14,.25,22.5,14,.5,9),
   box("ad26-piano","Piano / Keys",10,2,19,6,3,2),
   box("ad26-sub-left","Sub Left",-7,1.5,14.5,2.5,3,2.5),
   box("ad26-sub-right","Sub Right",7,1.5,14.5,2.5,3,2.5),
-  box("ad26-main-left","Main Left",-20,6.5,16,2.5,4,2.5),
-  box("ad26-main-right","Main Right",20,6.5,16,2.5,4,2.5)
+  speaker("ad26-main-left","Main Left",-20,6.5,16,2.5,4,2.5),
+  speaker("ad26-main-right","Main Right",20,6.5,16,2.5,4,2.5)
  ],
  referenceFixtures:[
   par("ad26-rear-par-l1","Rear PAR Left 1",-18,9.5,26,101),
