@@ -1,3 +1,4 @@
+import { unzipSync, strFromU8 } from "fflate";
 import type { FixtureProfile, FixtureMode, FixtureParameter } from "./profiles";
 
 const ATTRIBUTES: Array<[RegExp, FixtureParameter]> = [
@@ -36,9 +37,11 @@ export function parseGdtfDescription(xmlText:string):FixtureProfile {
 }
 
 export async function importGdtfFile(file:File):Promise<FixtureProfile> {
-  // GDTF is a ZIP container. Browser-native DecompressionStream does not support ZIP,
-  // so XML description files can be imported directly here; packaged .gdtf extraction
-  // is delegated to the Tauri native importer.
-  if(file.name.toLowerCase().endsWith(".xml")) return parseGdtfDescription(await file.text());
-  throw new Error("Packaged .gdtf selected. Use the desktop GDTF importer to extract description.xml.");
+  const lower=file.name.toLowerCase();
+  if(lower.endsWith(".xml")) return parseGdtfDescription(await file.text());
+  if(!lower.endsWith(".gdtf")) throw new Error("Choose a .gdtf package or description.xml file.");
+  const archive=unzipSync(new Uint8Array(await file.arrayBuffer()));
+  const entry=Object.entries(archive).find(([name])=>name.toLowerCase()==="description.xml"||name.toLowerCase().endsWith("/description.xml"));
+  if(!entry) throw new Error("GDTF package does not contain description.xml.");
+  return parseGdtfDescription(strFromU8(entry[1]));
 }
