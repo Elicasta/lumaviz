@@ -41,4 +41,38 @@ export const CORNERSTONE_MAIN_SANCTUARY:LocationPreset={
   {id:"cs-stage-left",name:"Stage Left",position:{x:ft(-12),y:ft(5),z:ft(15)},target:{x:0,y:ft(4),z:ft(18)}}
  ]
 };
-export const LOCATION_PRESETS=[CORNERSTONE_MAIN_SANCTUARY];
+
+export const ROSEN_SIGNATURE_2_AD26:LocationPreset={
+ id:"rosen-signature-2-ad26",name:"Apostolic Day 2026 - Signature Ballroom 2",venue:"Rosen Centre Hotel · Signature 2",version:1,estimated:true,
+ notes:[
+  "Official Rosen room footprint: 50 ft x 60 ft (3,000 sq ft).",
+  "Room envelope uses 16 ft ceiling from Rosen's room-specific capacity table / 2025 facilities guide; published Rosen pages also contain a conflicting 15 ft Signature 2 ceiling figure.",
+  "AD26 stage area begins past the architectural cove. Cove boundary is modeled as the stage-area datum; exact cove depth remains field-adjustable.",
+  "Production layout is based on the supplied Signature Ballroom reference and the Apostolic Day 2026 floor-stage plan."
+ ],
+ dimensions:{roomWidth:ft(50),roomDepth:ft(60),ceilingHeight:ft(16),stageWidth:ft(42),stageDepth:ft(12),stageHeight:ft(.67),screenWidth:ft(15),screenHeight:ft(8.44),screenBottom:ft(3),drapeWidth:ft(42),drapeHeight:ft(10)},
+ material:"ballroom",
+ objects:[
+  box("ad26-cove-line","Stage Cove Boundary",0,12,18,50,.08,.08),
+  box("ad26-back-drape","10 ft Black Back Drape",0,5,27.5,42,10,.3),
+  platform("ad26-pulpit-riser","8 in Pulpit Riser",0,.335,20,8,.67,6),
+  box("ad26-screen","180 in Projection Screen",0,7.2,27.15,15,8.44,.2),
+  box("ad26-pulpit","Black Pulpit",0,2.4,17.5,2.4,4.2,1.7),
+  platform("ad26-choir-riser-a","Choir Riser A",-14,.5,23,14,1,4),
+  platform("ad26-choir-riser-b","Choir Riser B",-14,1,25.2,14,2,4),
+  platform("ad26-band-pit","Band Pit",14,.25,22.5,14,.5,9),
+  box("ad26-piano","Piano / Keys",10,2,19,6,3,2),
+  box("ad26-sub-left","Sub Left",-7,1.5,14.5,2.5,3,2.5),
+  box("ad26-sub-right","Sub Right",7,1.5,14.5,2.5,3,2.5),
+  box("ad26-main-left","Main Left",-20,6.5,16,2.5,4,2.5),
+  box("ad26-main-right","Main Right",20,6.5,16,2.5,4,2.5)
+ ],
+ referenceFixtures:[],
+ cameras:[
+  {id:"ad26-foh",name:"AD26 FOH",position:{x:0,y:ft(5.5),z:ft(-20)},target:{x:0,y:ft(5),z:ft(22)}},
+  {id:"ad26-center-room",name:"Center Room",position:{x:0,y:ft(6),z:ft(-8)},target:{x:0,y:ft(5),z:ft(22)}},
+  {id:"ad26-stage-left",name:"Stage Left",position:{x:ft(-20),y:ft(6),z:ft(15)},target:{x:0,y:ft(5),z:ft(22)}},
+  {id:"ad26-stage-right",name:"Stage Right",position:{x:ft(20),y:ft(6),z:ft(15)},target:{x:0,y:ft(5),z:ft(22)}}
+ ]
+};
+export const LOCATION_PRESETS=[CORNERSTONE_MAIN_SANCTUARY,ROSEN_SIGNATURE_2_AD26];
