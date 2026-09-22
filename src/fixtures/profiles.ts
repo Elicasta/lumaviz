@@ -27,6 +27,13 @@ export const FIXTURE_PROFILES:FixtureProfile[]=[
  {id:"generic-moving-head",manufacturer:"Generic / Amazon",model:"LED Moving Head",name:"Generic LED Moving Head",kind:"moving-head",verified:false,note:"Starter template.",movement:{panRangeDegrees:540,tiltRangeDegrees:270},optics:{beamAngleMinDegrees:8,beamAngleMaxDegrees:22,defaultBeamAngleDegrees:12},modes:[mode("14ch-common","14ch · common starter layout",[ch(0,"Pan","pan"),ch(1,"Pan fine","panFine"),ch(2,"Tilt","tilt"),ch(3,"Tilt fine","tiltFine"),ch(4,"Movement speed","movementSpeed"),ch(5,"Color wheel","colorWheel"),ch(6,"Gobo","gobo"),ch(7,"Strobe","strobe"),ch(8,"Dimmer","dimmer"),ch(9,"Focus","focus"),ch(10,"Prism","prism"),ch(11,"Prism rotation","prismRotate"),ch(12,"Programs","macro"),ch(13,"Reset")])]}
 ];
 export const PROFILE_BY_ID=new Map(FIXTURE_PROFILES.map(p=>[p.id,p] as const));
+export function registerFixtureProfile(profile:FixtureProfile):FixtureProfile {
+  const index=FIXTURE_PROFILES.findIndex(item=>item.id===profile.id);
+  if(index>=0) FIXTURE_PROFILES[index]=profile;
+  else FIXTURE_PROFILES.push(profile);
+  PROFILE_BY_ID.set(profile.id,profile);
+  return profile;
+}
 export function defaultMode(profile:FixtureProfile):FixtureMode { return profile.modes[0]; }
 export function findMode(profileId:string,modeId?:string):FixtureMode|undefined { const p=PROFILE_BY_ID.get(profileId); return p?.modes.find(m=>m.id===modeId)??p?.modes[0]; }
 function byte(data:number[],address:number,offset:number){return data[address-1+offset]??0}
