@@ -47,6 +47,15 @@ interface FixtureRuntime {
   beamAngle: number;
 }
 
+interface SceneObjectRuntime {
+  definition: SceneObject;
+  mesh: Mesh;
+  baseMaterial: PBRMaterial;
+  displayMaterial?: PBRMaterial;
+  videoTexture?: VideoTexture;
+  displaySource?: string;
+}
+
 export class LumaVizScene {
   readonly engine: Engine;
   readonly scene: Scene;
@@ -54,7 +63,7 @@ export class LumaVizScene {
 
   private dimensions: SceneDimensions;
   private fixtures = new Map<string, FixtureRuntime>();
-  private sceneObjects = new Map<string, { definition: SceneObject; mesh: Mesh }>();
+  private sceneObjects = new Map<string, SceneObjectRuntime>();
   private selectedObjectId: string | null = null;
   private gizmos: GizmoManager;
   private selectedId: string | null = null;
@@ -65,6 +74,7 @@ export class LumaVizScene {
   private onSelection?: (value: SelectionSnapshot | null) => void;
   private onFixtureTransform?: (value: FixtureDefinition) => void;
   private onSceneObjectTransform?: (value: SceneObject) => void;
+  private planRestoreCamera: CustomCamera | null = null;
   private resizeObserver: ResizeObserver;
 
   constructor(
@@ -211,24 +221,37 @@ export class LumaVizScene {
     screen.material = m.screen;
 
     for (const object of objects) {
-      const mesh = MeshBuilder.CreateBox(object.id, {
-        width: object.size.x,
-        height: object.size.y,
-        depth: object.size.z
-      }, this.scene);
+      const mesh = object.kind === "display"
+        ? MeshBuilder.CreatePlane(object.id, {
+            width: object.size.x,
+            height: object.size.y,
+            sideOrientation: Mesh.DOUBLESIDE
+          }, this.scene)
+        : MeshBuilder.CreateBox(object.id, {
+            width: object.size.x,
+            height: object.size.y,
+            depth: object.size.z
+          }, this.scene);
       mesh.position.set(object.position.x, object.position.y, object.position.z);
       mesh.rotation.set(
         object.rotation.x * Math.PI / 180,
         object.rotation.y * Math.PI / 180,
         object.rotation.z * Math.PI / 180
       );
-      mesh.material = object.kind === "truss"
+      const baseMaterial = object.kind === "truss" || object.kind === "speaker"
         ? m.fixture
         : object.kind === "platform"
           ? m.stage
-          : m.wall;
+          : object.kind === "display"
+            ? m.screen
+            : m.wall;
+      mesh.material = baseMaterial;
       mesh.metadata = { sceneObjectId: object.id, sceneObjectKind: object.kind };
-      this.sceneObjects.set(object.id, { definition: { ...object, position: { ...object.position }, rotation: { ...object.rotation }, size: { ...object.size } }, mesh });
+      this.sceneObjects.set(object.id, {
+        definition: { ...object, position: { ...object.position }, rotation: { ...object.rotation }, size: { ...object.size } },
+        mesh,
+        baseMaterial
+      });
     }
 
     fixtures.forEach((fixture) => this.createFixture(fixture, m.fixture));
@@ -356,6 +379,7 @@ export class LumaVizScene {
     const runtime = this.sceneObjects.get(id);
     if (!runtime) return;
     this.selectedObjectId = id;
+    this.selectedIds.clear();
     this.selectedId = null;
     this.onSelection?.(null);
     if (this.activeTool === "select") this.gizmos.attachToNode(null);
@@ -365,27 +389,58 @@ export class LumaVizScene {
   updateSceneObject(definition: SceneObject): void {
     const runtime = this.sceneObjects.get(definition.id);
     if (!runtime) return;
-    runtime.definition = { ...definition, position: { ...definition.position }, rotation: { ...definition.rotation }, size: { ...definition.size } };
+    const previous = runtime.definition;
     runtime.mesh.position.set(definition.position.x, definition.position.y, definition.position.z);
     runtime.mesh.rotation.set(definition.rotation.x * Math.PI / 180, definition.rotation.y * Math.PI / 180, definition.rotation.z * Math.PI / 180);
-    runtime.mesh.scaling.set(definition.size.x / Math.max(runtime.mesh.getBoundingInfo().boundingBox.extendSize.x * 2, 0.001), definition.size.y / Math.max(runtime.mesh.getBoundingInfo().boundingBox.extendSize.y * 2, 0.001), definition.size.z / Math.max(runtime.mesh.getBoundingInfo().boundingBox.extendSize.z * 2, 0.001));
+    runtime.mesh.scaling.x *= definition.size.x / Math.max(previous.size.x, 0.001);
+    runtime.mesh.scaling.y *= definition.size.y / Math.max(previous.size.y, 0.001);
+    if (definition.kind !== "display") runtime.mesh.scaling.z *= definition.size.z / Math.max(previous.size.z, 0.001);
+    runtime.definition = { ...definition, position: { ...definition.position }, rotation: { ...definition.rotation }, size: { ...definition.size } };
   }
 
 
   setDisplaySurfaceMedia(sceneObjectId:string, source:string|undefined, options:{brightness:number;fit:string;flipX:boolean;flipY:boolean;rotation:number}):void {
-    const runtime=this.sceneObjects.get(sceneObjectId); if(!runtime)return;
-    const previous=runtime.mesh.material;
-    if(!source){ return; }
-        const material=new PBRMaterial(sceneObjectId+"-display-material",this.scene);
-    material.metallic=0; material.roughness=1;
-    try {
-      const texture=new VideoTexture(sceneObjectId+"-video",source,this.scene,true,true,Texture.TRILINEAR_SAMPLINGMODE,{autoPlay:true,muted:true,loop:true});
-      texture.uScale=options.flipX?-1:1; texture.vScale=options.flipY?-1:1;
-      material.albedoTexture=texture; material.emissiveTexture=texture;
-      material.emissiveColor=new Color3(options.brightness,options.brightness,options.brightness);
-      runtime.mesh.material=material;
-      previous?.dispose?.();
-    } catch { material.dispose(); }
+    const runtime=this.sceneObjects.get(sceneObjectId);
+    if(!runtime)return;
+    if(!source){
+      runtime.videoTexture?.dispose();
+      runtime.displayMaterial?.dispose();
+      runtime.videoTexture=undefined;
+      runtime.displayMaterial=undefined;
+      runtime.displaySource=undefined;
+      runtime.mesh.material=runtime.baseMaterial;
+      return;
+    }
+    const needsNewSource=runtime.displaySource!==source || !runtime.videoTexture || !runtime.displayMaterial;
+    if(needsNewSource){
+      runtime.videoTexture?.dispose();
+      runtime.displayMaterial?.dispose();
+      const material=new PBRMaterial(sceneObjectId+"-display-material",this.scene);
+      material.metallic=0;
+      material.roughness=1;
+      try {
+        const texture=new VideoTexture(sceneObjectId+"-video",source,this.scene,true,true,Texture.TRILINEAR_SAMPLINGMODE,{autoPlay:true,muted:true,loop:true});
+        runtime.videoTexture=texture;
+        runtime.displayMaterial=material;
+        runtime.displaySource=source;
+        material.albedoTexture=texture;
+        material.emissiveTexture=texture;
+        runtime.mesh.material=material;
+      } catch {
+        material.dispose();
+        runtime.mesh.material=runtime.baseMaterial;
+        runtime.displaySource=undefined;
+        return;
+      }
+    }
+    const texture=runtime.videoTexture;
+    const material=runtime.displayMaterial;
+    if(!texture || !material)return;
+    texture.uScale=options.flipX?-1:1;
+    texture.vScale=options.flipY?-1:1;
+    texture.wAng=options.rotation*Math.PI/180;
+    if(options.fit==="fill"){ texture.uScale*=1.08; texture.vScale*=1.08; }
+    material.emissiveColor=new Color3(options.brightness,options.brightness,options.brightness);
   }
 
   cameraSnapshot(): CustomCamera {
@@ -429,6 +484,7 @@ export class LumaVizScene {
 
   setPlanView(enabled: boolean): void {
     if (enabled) {
+      if (this.camera.mode !== Camera.ORTHOGRAPHIC_CAMERA) this.planRestoreCamera = this.cameraSnapshot();
       this.camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
       const span = Math.max(this.dimensions.roomWidth, this.dimensions.roomDepth) * 0.58;
       const aspect = this.engine.getRenderWidth() / Math.max(this.engine.getRenderHeight(), 1);
@@ -440,6 +496,11 @@ export class LumaVizScene {
       this.camera.setTarget(new Vector3(0, 0, this.dimensions.stageDepth - this.dimensions.roomDepth / 2));
     } else {
       this.camera.mode = Camera.PERSPECTIVE_CAMERA;
+      if (this.planRestoreCamera) {
+        const restore=this.planRestoreCamera;
+        this.planRestoreCamera=null;
+        this.restoreCamera(restore);
+      }
     }
   }
 
@@ -458,12 +519,15 @@ export class LumaVizScene {
       this.gizmos.attachToNode(null);
     } else if (this.selectedId) {
       this.gizmos.attachToNode(this.fixtures.get(this.selectedId)?.root ?? null);
+    } else if (this.selectedObjectId) {
+      this.gizmos.attachToMesh(this.sceneObjects.get(this.selectedObjectId)?.mesh ?? null);
     }
   }
 
   selectFixture(id: string, additive = false): void {
     const runtime = this.fixtures.get(id);
     if (!runtime) return;
+    this.selectedObjectId = null;
     if (!additive) this.selectedIds.clear();
     if (additive && this.selectedIds.has(id)) this.selectedIds.delete(id);
     else this.selectedIds.add(id);
@@ -494,6 +558,7 @@ export class LumaVizScene {
   clearSelection(): void {
     this.selectedIds.clear();
     this.selectedId = null;
+    this.selectedObjectId = null;
     this.gizmos.attachToNode(null);
     this.onSelection?.(null);
   }
@@ -529,41 +594,91 @@ export class LumaVizScene {
   }
 
   private syncSelectedTransform(): void {
-    if (!this.selectedId || this.activeTool === "select") return;
+    if (this.activeTool === "select") return;
+
+    if (this.selectedObjectId) {
+      const objectRuntime = this.sceneObjects.get(this.selectedObjectId);
+      if (!objectRuntime) return;
+      const position = { x: objectRuntime.mesh.position.x, y: objectRuntime.mesh.position.y, z: objectRuntime.mesh.position.z };
+      const rotation = {
+        x: objectRuntime.mesh.rotation.x * 180 / Math.PI,
+        y: objectRuntime.mesh.rotation.y * 180 / Math.PI,
+        z: objectRuntime.mesh.rotation.z * 180 / Math.PI
+      };
+      const next: SceneObject = {
+        ...objectRuntime.definition,
+        position,
+        rotation,
+        size: { ...objectRuntime.definition.size }
+      };
+      objectRuntime.definition = next;
+      this.onSceneObjectTransform?.(next);
+      return;
+    }
+
+    if (!this.selectedId) return;
     const runtime = this.fixtures.get(this.selectedId);
     if (!runtime) return;
 
-    const position = {
-      x: runtime.root.position.x,
-      y: runtime.root.position.y,
-      z: runtime.root.position.z
-    };
+    const beforePosition = { ...runtime.definition.position };
+    const beforeRotation = { ...runtime.definition.rotation };
+    const position = { x: runtime.root.position.x, y: runtime.root.position.y, z: runtime.root.position.z };
     const rotation = {
       x: runtime.root.rotation.x * 180 / Math.PI,
       y: runtime.root.rotation.y * 180 / Math.PI,
       z: runtime.root.rotation.z * 180 / Math.PI
     };
-
     const epsilon = 0.0001;
     const changed =
-      Math.abs(position.x - runtime.definition.position.x) > epsilon ||
-      Math.abs(position.y - runtime.definition.position.y) > epsilon ||
-      Math.abs(position.z - runtime.definition.position.z) > epsilon ||
-      Math.abs(rotation.x - runtime.definition.rotation.x) > epsilon ||
-      Math.abs(rotation.y - runtime.definition.rotation.y) > epsilon ||
-      Math.abs(rotation.z - runtime.definition.rotation.z) > epsilon;
-
+      Math.abs(position.x - beforePosition.x) > epsilon ||
+      Math.abs(position.y - beforePosition.y) > epsilon ||
+      Math.abs(position.z - beforePosition.z) > epsilon ||
+      Math.abs(rotation.x - beforeRotation.x) > epsilon ||
+      Math.abs(rotation.y - beforeRotation.y) > epsilon ||
+      Math.abs(rotation.z - beforeRotation.z) > epsilon;
     if (!changed) return;
 
-    runtime.definition.position = position;
-    runtime.definition.rotation = rotation;
+    const deltaPosition = {
+      x: position.x - beforePosition.x,
+      y: position.y - beforePosition.y,
+      z: position.z - beforePosition.z
+    };
+    const deltaRotation = {
+      x: rotation.x - beforeRotation.x,
+      y: rotation.y - beforeRotation.y,
+      z: rotation.z - beforeRotation.z
+    };
+
+    for (const id of this.selectedIds) {
+      const selectedRuntime = this.fixtures.get(id);
+      if (!selectedRuntime) continue;
+      if (id === this.selectedId) {
+        selectedRuntime.definition.position = position;
+        selectedRuntime.definition.rotation = rotation;
+      } else {
+        selectedRuntime.root.position.addInPlace(new Vector3(deltaPosition.x, deltaPosition.y, deltaPosition.z));
+        selectedRuntime.root.rotation.x += deltaRotation.x * Math.PI / 180;
+        selectedRuntime.root.rotation.y += deltaRotation.y * Math.PI / 180;
+        selectedRuntime.root.rotation.z += deltaRotation.z * Math.PI / 180;
+        selectedRuntime.definition.position = {
+          x: selectedRuntime.definition.position.x + deltaPosition.x,
+          y: selectedRuntime.definition.position.y + deltaPosition.y,
+          z: selectedRuntime.definition.position.z + deltaPosition.z
+        };
+        selectedRuntime.definition.rotation = {
+          x: selectedRuntime.definition.rotation.x + deltaRotation.x,
+          y: selectedRuntime.definition.rotation.y + deltaRotation.y,
+          z: selectedRuntime.definition.rotation.z + deltaRotation.z
+        };
+      }
+      this.onFixtureTransform?.({
+        ...selectedRuntime.definition,
+        position: { ...selectedRuntime.definition.position },
+        rotation: { ...selectedRuntime.definition.rotation },
+        patch: { ...selectedRuntime.definition.patch }
+      });
+    }
     this.emitSelection(runtime);
-    this.onFixtureTransform?.({
-      ...runtime.definition,
-      position: { ...position },
-      rotation: { ...rotation },
-      patch: { ...runtime.definition.patch }
-    });
   }
 
   applyFrame(frame: FixtureFrame): void {
