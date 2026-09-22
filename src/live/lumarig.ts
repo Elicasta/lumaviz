@@ -25,6 +25,7 @@ export function connectToLumaRig(
     onStageChange?: (change: unknown) => void;
     onSharedShowSnapshot?: (snapshot: unknown) => void;
     onSharedShowConflict?: (conflict: unknown) => void;
+    onSharedShowActivation?: (activation: unknown) => void;
     onClose?: () => void;
     onError?: (message: string) => void;
   }
@@ -43,6 +44,7 @@ export function connectToLumaRig(
   socket.addEventListener("message", (event) => {
     try {
       const message = JSON.parse(String(event.data)) as unknown;
+      if (message && typeof message === "object" && (message as { type?: string }).type === "shared-show.activate") { handlers.onSharedShowActivation?.(message); return; }
       if (message && typeof message === "object" && (message as { type?: string }).type === "shared-show.conflict") {
         handlers.onSharedShowConflict?.(message);
         return;
