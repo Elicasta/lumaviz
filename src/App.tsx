@@ -132,6 +132,9 @@ export default function App() {
   const [lastPacketSource, setLastPacketSource] = useState("");
   const [packetCount, setPacketCount] = useState(0);
   const [matchedFixtureCount, setMatchedFixtureCount] = useState(0);
+  const [sharedShowRevision, setSharedShowRevision] = useState(1);
+  const [sharedShowName, setSharedShowName] = useState("Local Scene");
+  const [sharedShowLibrary, setSharedShowLibrary] = useState<Array<{id:string;name:string;savedAt:string;status:string}>>([]);
 
   useEffect(() => {
     fixturesRef.current = fixtures;
@@ -409,6 +412,17 @@ export default function App() {
         setConnectionMessage("LumaRig Direct connected");
         setLastPacketSource(lumaRigUrl);
       },
+      onSharedShowSnapshot: (value) => {
+        const snapshot = value as { revision?:number; show?:{id?:string;name?:string}; patch?:Array<{id:string;name:string;profileId:string;modeId:string;universe:number;address:number;group?:string;transform?:{position?:{x:number;y:number;z:number};rotation?:{yaw:number;pitch:number;roll:number}}}>; library?:Array<{id:string;name:string;savedAt:string;status:string}> };
+        if (typeof snapshot.revision === "number") setSharedShowRevision(snapshot.revision);
+        if (snapshot.show?.name) setSharedShowName(snapshot.show.name);
+        if (snapshot.library) setSharedShowLibrary(snapshot.library);
+        if (snapshot.patch?.length) setFixtures((current) => snapshot.patch!.map((item) => {
+          const existing = current.find((fixture) => fixture.id === item.id);
+          const profile = FIXTURE_PROFILES.find((candidate) => candidate.id === item.profileId);
+          return { id:item.id, name:item.name, kind:profile?.kind ?? existing?.kind ?? "par", position:item.transform?.position ?? existing?.position ?? {x:0,y:2.7,z:1.5}, rotation:item.transform?.rotation ? {x:item.transform.rotation.pitch,y:item.transform.rotation.yaw,z:item.transform.rotation.roll} : existing?.rotation ?? {x:0,y:0,z:0}, patch:{enabled:true,universe:item.universe,address:item.address,profileId:item.profileId,modeId:item.modeId} };
+        }));
+      },
       onStageChange: (change) => {
         // Stage changes from LumaRig are intentionally received separately from
         // live lighting frames. The Stage Sync policy/revision layer decides
@@ -538,7 +552,17 @@ export default function App() {
   }
 
   function updateFixture(id: string, update: (fixture: FixtureDefinition) => FixtureDefinition) {
-    setFixtures((current) => current.map((fixture) => fixture.id === id ? update(fixture) : fixture));
+    setFixtures((current) => current.map((fixture) => {
+      if (fixture.id !== id) return fixture;
+      const next = update(fixture);
+      const revision = sharedShowRevision + 1;
+      setSharedShowRevision(revision);
+      directRef.current?.sendPatchUpdate({
+        type: "shared-show.patch.update", revision, source: "lumaviz", showId: sharedShowName,
+        fixture: { id: next.id, name: next.name, profileId: next.patch.profileId, modeId: next.patch.modeId ?? "", universe: next.patch.universe, address: next.patch.address, group: (next as FixtureDefinition & {group?:string}).group, position: next.position, rotation: next.rotation }
+      });
+      return next;
+    }));
   }
 
   function deleteFixture(id: string) {
@@ -1228,6 +1252,7 @@ export default function App() {
         <footer className="status-bar">
           <div><span className={"status-dot " + connectionClass} /> {connectionMessage}</div>
           <div>{fixtures.length} fixtures</div>
+          <div>{sharedShowName} · R{sharedShowRevision}{sharedShowLibrary.length ? ` · ${sharedShowLibrary.length} shared shows` : ""}</div>
           <div>{patchedUniverses.length} universe{patchedUniverses.length === 1 ? "" : "s"}</div>
           <div className="status-spacer" />
           <div>v0.2.0</div>
