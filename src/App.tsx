@@ -513,8 +513,12 @@ export default function App() {
       material,
       activeView,
       customCameras,
-      activeCustomCameraId
+      activeCustomCameraId,
+      activeLocationId,
+      sharedShowName,
+      sharedShowRevision
     }));
+    setConnectionMessage("Scene saved · "+sharedShowName);
   }
 
   function openScene() {
@@ -529,6 +533,9 @@ export default function App() {
       activeView?: ViewPreset;
       customCameras?: CustomCamera[];
       activeCustomCameraId?: string | null;
+      activeLocationId?: string;
+      sharedShowName?: string;
+      sharedShowRevision?: number;
     };
 
     if (saved.dimensions) setDimensions(saved.dimensions);
@@ -538,9 +545,13 @@ export default function App() {
     if (saved.activeView) setActiveView(saved.activeView);
     if (saved.customCameras) setCustomCameras(saved.customCameras);
     setActiveCustomCameraId(saved.activeCustomCameraId ?? null);
+    setActiveLocationId(saved.activeLocationId ?? "");
+    if(saved.sharedShowName)setSharedShowName(saved.sharedShowName);
+    if(typeof saved.sharedShowRevision==="number")setSharedShowRevision(saved.sharedShowRevision);
 
     setSelected(null);
     setSceneVersion((value) => value + 1);
+    setConnectionMessage("Saved scene opened · outputs unchanged");
   }
 
   function resetScene() {
@@ -553,7 +564,10 @@ export default function App() {
     setCustomCameras([]);
     setActiveCustomCameraId(null);
     setSelected(null);
+    setActiveLocationId("");
+    setSharedShowName("Local Scene");
     setSceneVersion((value) => value + 1);
+    setConnectionMessage("New local scene · outputs unchanged");
   }
 
   function addBuildObject() {
