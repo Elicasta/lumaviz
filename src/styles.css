@@ -1346,3 +1346,5 @@ body { background:#07090b; }
   background:#1d5d38!important;border-color:#32794d!important;color:#effff5!important;
 }
 .status-dot.connected,.status-dot.healthy { background:var(--luma-green)!important; }
+
+.venue-sidebar{padding:10px;border-bottom:1px solid var(--line,#293136);display:grid;gap:6px}.venue-sidebar label,.library-location-summary span{font-size:9px;letter-spacing:.12em;color:#778187}.venue-sidebar select{width:100%;background:#101518;color:#d7dfe1;border:1px solid #313a3e;padding:8px}.venue-sidebar small,.library-location-summary small{font-size:8px;color:#68747a}.library-location-summary{display:grid;grid-template-columns:auto 1fr auto;gap:6px 12px;align-items:center;padding:12px 14px;border:1px solid #293136;background:#101518;margin-bottom:12px}.library-location-summary strong{font-size:11px}.library-location-summary small{grid-column:2}.library-location-summary button{grid-column:3;grid-row:1/3}
