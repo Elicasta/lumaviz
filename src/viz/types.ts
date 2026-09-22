@@ -10,7 +10,7 @@ export type ViewPreset =
 export type TransformTool = "select" | "move" | "rotate";
 export type UnitSystem = "ft" | "m";
 export type MaterialPreset = "production-dark" | "ballroom" | "black-box";
-export type FixtureKind = "par" | "moving-head" | "blinder";
+export type FixtureKind = "par" | "moving-head" | "blinder" | "bar";
 export type SceneObjectKind = "truss" | "platform" | "box" | "display" | "speaker" | "pulpit" | "scenery";
 
 export interface Vec3 {
