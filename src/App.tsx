@@ -26,6 +26,7 @@ import type {
 } from "./viz/types";
 import { displayDistance, inputDistance } from "./viz/units";
 import { isSharedShowActivation } from "./core/shared-show";
+import { canAutoApplyStageChange, stageChangeConflicts, type StageChange, type StageSyncMode } from "./core/stage-sync";
 
 type PageId = "build" | "patch" | "visualize" | "cameras" | "screens" | "connect" | "library" | "monitor";
 type InputSource = "demo" | "lumarig" | "vizbridge" | "artnet" | "sacn" | "none";
@@ -175,6 +176,12 @@ export default function App() {
   const [sharedShowName, setSharedShowName] = useState("Local Scene");
   const [sharedShowLibrary, setSharedShowLibrary] = useState<Array<{id:string;name:string;savedAt:string;status:string}>>([]);
   const [activeLocationId, setActiveLocationId] = useState<string>("");
+  const [stageSyncMode,setStageSyncMode]=useState<StageSyncMode>("review");
+  const [stageRevision,setStageRevision]=useState(1);
+  const [stageChanges,setStageChanges]=useState<StageChange[]>([]);
+  const stageSyncModeRef=useRef<StageSyncMode>("review");
+  const stageRevisionRef=useRef(1);
+  const pendingStageChanges=stageChanges.filter(change=>change.status==="pending"||change.status==="conflict");
   const [studioFrame,setStudioFrame]=useState<StudioMediaFrame|null>(null);
   const [studioMediaState,setStudioMediaState]=useState<"offline"|"connected">("offline");
   const [displaySurfaces,setDisplaySurfaces]=useState<DisplaySurface[]>(loadDisplaySurfaces);
@@ -182,6 +189,8 @@ export default function App() {
   useEffect(()=>{ let stop:(()=>void)|undefined; void connectStudioMedia("local://lumastudio-media",{onOpen:()=>setStudioMediaState("connected"),onClose:()=>setStudioMediaState("offline"),onFrame:setStudioFrame}).then(unlisten=>{stop=unlisten;}); return()=>stop?.(); },[]);
 
   useEffect(()=>{ localStorage.setItem("lumaviz.display-surfaces",JSON.stringify(displaySurfaces)); },[displaySurfaces]);
+  useEffect(()=>{ stageSyncModeRef.current=stageSyncMode; },[stageSyncMode]);
+  useEffect(()=>{ stageRevisionRef.current=stageRevision; },[stageRevision]);
 
   useEffect(() => {
     fixturesRef.current = fixtures;
@@ -212,13 +221,16 @@ export default function App() {
             entityKind: "fixture",
             category: "fixturePosition",
             source: "lumaviz",
-            baseRevision: sceneVersion,
+            baseRevision: stageRevisionRef.current,
             createdAt: new Date().toISOString(),
             summary: transformed.name + " position / rotation",
             before: { position: before.position, rotation: before.rotation },
             after: { position: transformed.position, rotation: transformed.rotation },
             status: "pending"
           });
+          const nextRevision=stageRevisionRef.current+1;
+          stageRevisionRef.current=nextRevision;
+          setStageRevision(nextRevision);
         }
       },
       (transformedObject) => {
@@ -242,6 +254,9 @@ export default function App() {
             after:{position:transformedObject.position,rotation:transformedObject.rotation,size:transformedObject.size},
             status:"pending"
           });
+          const nextRevision=stageRevisionRef.current+1;
+          stageRevisionRef.current=nextRevision;
+          setStageRevision(nextRevision);
         }
       },
       setSelectedObjectId
@@ -517,6 +532,101 @@ export default function App() {
     if (!cleanup) setConnectionState("error");
   }
 
+
+  function normalizeIncomingRotation(value: unknown): {x:number;y:number;z:number}|undefined {
+    if(!value || typeof value!=="object")return undefined;
+    const rotation=value as Record<string,unknown>;
+    if(typeof rotation.x==="number"&&typeof rotation.y==="number"&&typeof rotation.z==="number"){
+      return {x:rotation.x,y:rotation.y,z:rotation.z};
+    }
+    if(typeof rotation.yaw==="number"&&typeof rotation.pitch==="number"&&typeof rotation.roll==="number"){
+      return {x:rotation.pitch,y:rotation.yaw,z:rotation.roll};
+    }
+    return undefined;
+  }
+
+  function normalizeIncomingVec3(value: unknown): {x:number;y:number;z:number}|undefined {
+    if(!value || typeof value!=="object")return undefined;
+    const vector=value as Record<string,unknown>;
+    return typeof vector.x==="number"&&typeof vector.y==="number"&&typeof vector.z==="number"
+      ? {x:vector.x,y:vector.y,z:vector.z}
+      : undefined;
+  }
+
+  function stageChangeSupported(change:StageChange):boolean {
+    return change.category==="fixturePosition" || change.category==="scenery" || change.category==="patch" || change.category==="fixtureProfile";
+  }
+
+  function applyIncomingStageChange(change:StageChange,approved=false):boolean {
+    if(!stageChangeSupported(change)){
+      setConnectionMessage("Stage Sync · "+change.category+" requires a future model upgrade");
+      return false;
+    }
+    const after=(change.after && typeof change.after==="object" ? change.after : {}) as Record<string,unknown>;
+    let applied=false;
+    let rebuild=false;
+
+    if(change.entityKind==="fixture" && change.category==="fixturePosition"){
+      const position=normalizeIncomingVec3(after.position);
+      const rotation=normalizeIncomingRotation(after.rotation);
+      if(position||rotation){
+        setFixtures(current=>current.map(fixture=>{
+          if(fixture.id!==change.entityId)return fixture;
+          const next={...fixture,position:position??fixture.position,rotation:rotation??fixture.rotation};
+          sceneRef.current?.updateFixtureTransform(fixture.id,next.position,next.rotation);
+          return next;
+        }));
+        applied=true;
+      }
+    } else if(change.entityKind==="object" && change.category==="scenery"){
+      const position=normalizeIncomingVec3(after.position);
+      const rotation=normalizeIncomingRotation(after.rotation);
+      const size=normalizeIncomingVec3(after.size);
+      setObjects(current=>current.map(object=>{
+        if(object.id!==change.entityId)return object;
+        const next={...object,position:position??object.position,rotation:rotation??object.rotation,size:size??object.size};
+        sceneRef.current?.updateSceneObject(next);
+        applied=true;
+        return next;
+      }));
+    } else if(change.entityKind==="fixture" && (change.category==="patch"||change.category==="fixtureProfile")){
+      setFixtures(current=>current.map(fixture=>{
+        if(fixture.id!==change.entityId)return fixture;
+        const patchAfter=(after.patch && typeof after.patch==="object" ? after.patch : after) as Record<string,unknown>;
+        const profileId=typeof patchAfter.profileId==="string"?patchAfter.profileId:fixture.patch.profileId;
+        const modeId=typeof patchAfter.modeId==="string"?patchAfter.modeId:fixture.patch.modeId;
+        const profile=FIXTURE_PROFILES.find(item=>item.id===profileId);
+        applied=true;
+        rebuild=true;
+        return {
+          ...fixture,
+          kind:profile?.kind??fixture.kind,
+          patch:{
+            ...fixture.patch,
+            profileId,
+            modeId,
+            universe:typeof patchAfter.universe==="number"?patchAfter.universe:fixture.patch.universe,
+            address:typeof patchAfter.address==="number"?patchAfter.address:fixture.patch.address,
+            enabled:typeof patchAfter.enabled==="boolean"?patchAfter.enabled:fixture.patch.enabled
+          }
+        };
+      }));
+    }
+
+    if(!applied)return false;
+    const nextRevision=Math.max(stageRevisionRef.current+1,change.baseRevision+1);
+    stageRevisionRef.current=nextRevision;
+    setStageRevision(nextRevision);
+    setStageChanges(current=>current.map(item=>item.id===change.id?{...item,status:approved?"approved":"applied"}:item));
+    if(rebuild)setSceneVersion(version=>version+1);
+    setConnectionMessage("Stage Sync · "+change.summary+" applied · R"+nextRevision);
+    return true;
+  }
+
+  function rejectStageChange(id:string){
+    setStageChanges(current=>current.map(change=>change.id===id?{...change,status:"rejected"}:change));
+  }
+
   async function connectDirect() {
     await cleanupConnection();
     setSource("lumarig");
@@ -546,11 +656,22 @@ export default function App() {
           return { id:item.id, name:item.name, kind:profile?.kind ?? existing?.kind ?? "par", position:item.transform?.position ?? existing?.position ?? {x:0,y:2.7,z:1.5}, rotation:item.transform?.rotation ? {x:item.transform.rotation.pitch,y:item.transform.rotation.yaw,z:item.transform.rotation.roll} : existing?.rotation ?? {x:0,y:0,z:0}, patch:{enabled:true,universe:item.universe,address:item.address,profileId:item.profileId,modeId:item.modeId} };
         }));
       },
-      onStageChange: (change) => {
-        // Stage changes from LumaRig are intentionally received separately from
-        // live lighting frames. The Stage Sync policy/revision layer decides
-        // when they mutate the LumaViz world.
-        console.info("LumaRig Stage Sync change", change);
+      onStageChange: (value) => {
+        const change=value as StageChange;
+        if(!change?.id || !change.entityId || typeof change.baseRevision!=="number")return;
+        const conflict=stageChangeConflicts(stageRevisionRef.current,change);
+        if(conflict){
+          setStageChanges(current=>[{...change,status:"conflict"},...current.filter(item=>item.id!==change.id)].slice(0,80));
+          setConnectionMessage("Stage Sync conflict · "+change.summary+" · expected R"+stageRevisionRef.current);
+          return;
+        }
+        if(canAutoApplyStageChange(stageSyncModeRef.current,change)){
+          setStageChanges(current=>[{...change,status:"pending"},...current.filter(item=>item.id!==change.id)].slice(0,80));
+          applyIncomingStageChange(change);
+          return;
+        }
+        setStageChanges(current=>[{...change,status:"pending"},...current.filter(item=>item.id!==change.id)].slice(0,80));
+        setConnectionMessage("Stage Sync · "+change.summary+" awaiting review");
       },
             onFrame: (frame) => {
         setPacketCount((count) => count + 1);
@@ -609,7 +730,9 @@ export default function App() {
       visualizerMode,
       activeLocationId,
       sharedShowName,
-      sharedShowRevision
+      sharedShowRevision,
+      stageSyncMode,
+      stageRevision
     }));
     setConnectionMessage("Scene saved · "+sharedShowName);
   }
@@ -631,6 +754,8 @@ export default function App() {
       activeLocationId?: string;
       sharedShowName?: string;
       sharedShowRevision?: number;
+      stageSyncMode?: StageSyncMode;
+      stageRevision?: number;
     };
 
     if (saved.dimensions) setDimensions(saved.dimensions);
@@ -645,6 +770,11 @@ export default function App() {
     setActiveLocationId(saved.activeLocationId ?? "");
     if(saved.sharedShowName)setSharedShowName(saved.sharedShowName);
     if(typeof saved.sharedShowRevision==="number")setSharedShowRevision(saved.sharedShowRevision);
+    if(saved.stageSyncMode)setStageSyncMode(saved.stageSyncMode);
+    if(typeof saved.stageRevision==="number"){
+      setStageRevision(saved.stageRevision);
+      stageRevisionRef.current=saved.stageRevision;
+    }
 
     setSelected(null);
     setSceneVersion((value) => value + 1);
@@ -664,6 +794,10 @@ export default function App() {
     setVisualizerMode("3d");
     setActiveLocationId("");
     setSharedShowName("Local Scene");
+    setStageSyncMode("review");
+    setStageRevision(1);
+    stageRevisionRef.current=1;
+    setStageChanges([]);
     cameraSnapshotRef.current=null;
     setSelected(null);
     setSceneVersion((value) => value + 1);
@@ -1333,6 +1467,26 @@ export default function App() {
             </div>
           </div>
 
+          <section className="stage-sync-card">
+            <div className="stage-sync-head">
+              <div><span>STAGE SYNC</span><strong>{stageSyncMode.toUpperCase()}</strong><small>Revision {stageRevision} · {pendingStageChanges.length} pending</small></div>
+              <div className="stage-sync-modes">
+                {(["locked","review","live"] as StageSyncMode[]).map(mode=><button key={mode} className={stageSyncMode===mode?"active":""} onClick={()=>setStageSyncMode(mode)}>{mode.toUpperCase()}</button>)}
+              </div>
+            </div>
+            <p>{stageSyncMode==="locked"?"Incoming stage edits are held for review and never auto-apply.":stageSyncMode==="review"?"Incoming changes are queued so the operator approves them before the world changes.":"Safe fixture/scenery transforms auto-apply. Patch, profile and calibration changes still require review."}</p>
+            <div className="stage-sync-list">
+              {pendingStageChanges.slice(0,6).map(change=><article key={change.id} className={change.status==="conflict"?"conflict":""}>
+                <div><span>{change.category.toUpperCase()}</span><strong>{change.summary}</strong><small>{change.source.toUpperCase()} · base R{change.baseRevision}{change.status==="conflict"?" · REVISION CONFLICT":""}</small></div>
+                <div className="stage-sync-actions">
+                  <button disabled={change.status==="conflict"||!stageChangeSupported(change)} onClick={()=>applyIncomingStageChange(change,true)}>APPROVE</button>
+                  <button onClick={()=>rejectStageChange(change.id)}>REJECT</button>
+                </div>
+              </article>)}
+              {!pendingStageChanges.length&&<div className="stage-sync-empty">No incoming stage changes are waiting.</div>}
+            </div>
+          </section>
+
           <div className="connection-grid">
             <ConnectionCard
               title="VizBridge"
@@ -1443,6 +1597,7 @@ export default function App() {
           <div>{fixtures.length} fixtures</div>
           <div>{sharedShowName} · R{sharedShowRevision}{sharedShowLibrary.length ? ` · ${sharedShowLibrary.length} shared shows` : ""}</div>
           <div>{patchedUniverses.length} universe{patchedUniverses.length === 1 ? "" : "s"}</div>
+          <div>SYNC {stageSyncMode.toUpperCase()} · R{stageRevision}{pendingStageChanges.length ? ` · ${pendingStageChanges.length} pending` : ""}</div>
           <div className="status-spacer" />
           <div>v0.4.0</div>
         </footer>
