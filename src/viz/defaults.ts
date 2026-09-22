@@ -24,7 +24,7 @@ export const DEFAULT_FIXTURES: FixtureDefinition[] = [
     kind: "par",
     position: { x: feetToMeters(-11), y, z: feetToMeters(-8) },
     rotation: { x: -32, y: 16, z: 0 },
-    patch: { enabled: true, universe: 1, address: 1, profileId: "generic-rgbw-par-5ch" }
+    patch: { enabled: true, universe: 1, address: 1, profileId: "generic-rgbw-par", modeId: "5ch-drgbw" }
   },
   {
     id: "front-wash-2",
@@ -32,7 +32,7 @@ export const DEFAULT_FIXTURES: FixtureDefinition[] = [
     kind: "par",
     position: { x: feetToMeters(11), y, z: feetToMeters(-8) },
     rotation: { x: -32, y: -16, z: 0 },
-    patch: { enabled: true, universe: 1, address: 6, profileId: "generic-rgbw-par-5ch" }
+    patch: { enabled: true, universe: 1, address: 6, profileId: "generic-rgbw-par", modeId: "5ch-drgbw" }
   },
   {
     id: "back-wash-1",
@@ -40,7 +40,7 @@ export const DEFAULT_FIXTURES: FixtureDefinition[] = [
     kind: "par",
     position: { x: feetToMeters(-12), y: feetToMeters(9.2), z: feetToMeters(13) },
     rotation: { x: -50, y: -6, z: 0 },
-    patch: { enabled: true, universe: 1, address: 11, profileId: "generic-rgbw-par-5ch" }
+    patch: { enabled: true, universe: 1, address: 11, profileId: "generic-rgbw-par", modeId: "5ch-drgbw" }
   },
   {
     id: "back-wash-2",
@@ -48,7 +48,7 @@ export const DEFAULT_FIXTURES: FixtureDefinition[] = [
     kind: "par",
     position: { x: feetToMeters(12), y: feetToMeters(9.2), z: feetToMeters(13) },
     rotation: { x: -50, y: 6, z: 0 },
-    patch: { enabled: true, universe: 1, address: 16, profileId: "generic-rgbw-par-5ch" }
+    patch: { enabled: true, universe: 1, address: 16, profileId: "generic-rgbw-par", modeId: "5ch-drgbw" }
   },
   {
     id: "moving-head-left",
@@ -56,7 +56,7 @@ export const DEFAULT_FIXTURES: FixtureDefinition[] = [
     kind: "moving-head",
     position: { x: feetToMeters(-9), y: feetToMeters(2.7), z: feetToMeters(11) },
     rotation: { x: 0, y: 0, z: 0 },
-    patch: { enabled: true, universe: 1, address: 21, profileId: "lumaviz-moving-head-9ch" }
+    patch: { enabled: true, universe: 1, address: 21, profileId: "generic-moving-head", modeId: "14ch-common" }
   },
   {
     id: "moving-head-right",
@@ -64,7 +64,7 @@ export const DEFAULT_FIXTURES: FixtureDefinition[] = [
     kind: "moving-head",
     position: { x: feetToMeters(9), y: feetToMeters(2.7), z: feetToMeters(11) },
     rotation: { x: 0, y: 0, z: 0 },
-    patch: { enabled: true, universe: 1, address: 30, profileId: "lumaviz-moving-head-9ch" }
+    patch: { enabled: true, universe: 1, address: 30, profileId: "generic-moving-head", modeId: "14ch-common" }
   }
 ];
 
