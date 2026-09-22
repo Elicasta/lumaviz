@@ -1283,3 +1283,35 @@ select:focus {
     grid-template-columns: repeat(3, 1fr);
   }
 }
+
+
+/* v0.3 MA-style operator workspace */
+.page-visualize .workspace { grid-template-columns: 244px minmax(0,1fr) 312px; }
+.operator-tabs {
+  display:grid; grid-auto-flow:column; grid-auto-columns:1fr; height:34px;
+  border-bottom:1px solid #2b394b; background:#0c131d;
+}
+.operator-tabs button {
+  border:0; border-bottom:2px solid transparent; background:transparent; color:#66778c;
+  font-size:7px; font-weight:850; letter-spacing:.09em; cursor:pointer;
+}
+.operator-tabs button:hover { color:#b9cce0; background:#111c29; }
+.operator-tabs button.active { color:#e9f5ff; border-bottom-color:#58aaf6; background:#142236; }
+.inspector-tabs { position:sticky; top:0; z-index:4; }
+.selected-card { position:relative; background:linear-gradient(90deg,#111e2d,#0d141e); }
+.selection-accent { position:absolute; left:0; top:0; bottom:0; width:3px; background:#58aaf6; box-shadow:0 0 12px rgba(88,170,246,.45); }
+.page-visualize .inspector-section { padding:11px 12px; }
+.page-visualize .inspector-section h2 { font-size:14px; }
+.page-visualize .inspector-section h3 { margin-bottom:7px; }
+.page-visualize .three-inputs input { background:#080d13; border-color:#29394c; }
+.page-visualize .viewport-modebar { height:36px; background:linear-gradient(180deg,#111b28,#0b1119); }
+.page-visualize .mode-tabs button { min-width:72px; }
+.page-visualize .show-deck { min-height:102px; box-shadow:0 -8px 28px rgba(0,0,0,.22); }
+.page-visualize .deck-readout strong { font-variant-numeric:tabular-nums; }
+.page-visualize .tree { padding:5px; }
+.page-visualize .tree-row { border:1px solid transparent; border-radius:2px; min-height:30px; }
+.page-visualize .tree-row.selected { border-color:#284e73; background:#13283e; }
+.page-visualize .tree-label { min-height:25px; padding-inline:7px; color:#71849a; }
+@media (max-width:1180px) {
+ .page-visualize .workspace { grid-template-columns:205px minmax(0,1fr) 270px; }
+}
