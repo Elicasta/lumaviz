@@ -12,7 +12,8 @@ const fixture: FixtureDefinition = {
     enabled: true,
     universe: 1,
     address: 1,
-    profileId: "generic-rgbw-par-5ch"
+    profileId: "generic-rgbw-par",
+    modeId: "5ch-drgbw"
   }
 };
 
