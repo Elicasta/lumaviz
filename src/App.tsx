@@ -413,6 +413,11 @@ export default function App() {
         setConnectionMessage("LumaRig Direct connected");
         setLastPacketSource(lumaRigUrl);
       },
+      onSharedShowConflict: (value) => {
+        const conflict = value as { revision?:number; reason?:string };
+        if (typeof conflict.revision === "number") setSharedShowRevision(conflict.revision);
+        setConnectionMessage("Shared show conflict · LumaRig kept newer revision" + (conflict.revision ? " R" + conflict.revision : ""));
+      },
       onSharedShowSnapshot: (value) => {
         const snapshot = value as { revision?:number; show?:{id?:string;name?:string}; patch?:Array<{id:string;name:string;profileId:string;modeId:string;universe:number;address:number;group?:string;transform?:{position?:{x:number;y:number;z:number};rotation?:{yaw:number;pitch:number;roll:number}}}>; library?:Array<{id:string;name:string;savedAt:string;status:string}> };
         if (typeof snapshot.revision === "number") setSharedShowRevision(snapshot.revision);
