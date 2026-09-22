@@ -48,7 +48,8 @@ export const ROSEN_SIGNATURE_2_AD26:LocationPreset={
   "Official Rosen room footprint: 50 ft x 60 ft (3,000 sq ft).",
   "Room envelope uses 16 ft ceiling from Rosen's room-specific capacity table / 2025 facilities guide; published Rosen pages also contain a conflicting 15 ft Signature 2 ceiling figure.",
   "AD26 stage area begins past the architectural cove. Cove boundary is modeled as the stage-area datum; exact cove depth remains field-adjustable.",
-  "Production layout is based on the supplied Signature Ballroom reference and the Apostolic Day 2026 floor-stage plan."
+  "Production layout is based on the supplied Signature Ballroom reference and the Apostolic Day 2026 floor-stage plan.",
+  "Lighting reference patch is intentionally disabled until the exact AD26 PAR fixture profile/mode and final addresses are confirmed."
  ],
  dimensions:{roomWidth:ft(50),roomDepth:ft(60),ceilingHeight:ft(16),stageWidth:ft(42),stageDepth:ft(12),stageHeight:ft(.67),screenWidth:ft(15),screenHeight:ft(8.44),screenBottom:ft(3),drapeWidth:ft(42),drapeHeight:ft(10)},
  material:"ballroom",
@@ -67,7 +68,16 @@ export const ROSEN_SIGNATURE_2_AD26:LocationPreset={
   box("ad26-main-left","Main Left",-20,6.5,16,2.5,4,2.5),
   box("ad26-main-right","Main Right",20,6.5,16,2.5,4,2.5)
  ],
- referenceFixtures:[],
+ referenceFixtures:[
+  par("ad26-rear-par-l1","Rear PAR Left 1",-18,9.5,26,101),
+  par("ad26-rear-par-l2","Rear PAR Left 2",-15,9.5,26,106),
+  par("ad26-rear-par-l3","Rear PAR Left 3",-12,9.5,26,111),
+  par("ad26-rear-par-r1","Rear PAR Right 1",12,9.5,26,116),
+  par("ad26-rear-par-r2","Rear PAR Right 2",15,9.5,26,121),
+  par("ad26-rear-par-r3","Rear PAR Right 3",18,9.5,26,126),
+  par("ad26-front-wash-left","Front Wash Left",-19,9.5,10,201),
+  par("ad26-front-wash-right","Front Wash Right",19,9.5,10,206)
+ ],
  cameras:[
   {id:"ad26-foh",name:"AD26 FOH",position:{x:0,y:ft(5.5),z:ft(-20)},target:{x:0,y:ft(5),z:ft(22)}},
   {id:"ad26-center-room",name:"Center Room",position:{x:0,y:ft(6),z:ft(-8)},target:{x:0,y:ft(5),z:ft(22)}},
