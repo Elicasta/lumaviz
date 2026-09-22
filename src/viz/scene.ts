@@ -12,7 +12,9 @@ import {
   Scene,
   SpotLight,
   TransformNode,
-  Vector3
+  Vector3,
+  VideoTexture,
+  Texture
 } from "@babylonjs/core";
 import "@babylonjs/loaders";
 import { getCameraPose } from "./cameraPresets";
@@ -367,6 +369,24 @@ export class LumaVizScene {
     runtime.mesh.position.set(definition.position.x, definition.position.y, definition.position.z);
     runtime.mesh.rotation.set(definition.rotation.x * Math.PI / 180, definition.rotation.y * Math.PI / 180, definition.rotation.z * Math.PI / 180);
     runtime.mesh.scaling.set(definition.size.x / Math.max(runtime.mesh.getBoundingInfo().boundingBox.extendSize.x * 2, 0.001), definition.size.y / Math.max(runtime.mesh.getBoundingInfo().boundingBox.extendSize.y * 2, 0.001), definition.size.z / Math.max(runtime.mesh.getBoundingInfo().boundingBox.extendSize.z * 2, 0.001));
+  }
+
+
+  setDisplaySurfaceMedia(sceneObjectId:string, source:string|undefined, options:{brightness:number;fit:string;flipX:boolean;flipY:boolean;rotation:number}):void {
+    const runtime=this.sceneObjects.get(sceneObjectId); if(!runtime)return;
+    const previous=runtime.mesh.material;
+    if(!source){ return; }
+    const video=VideoTexture.CreateFromStreamAsync ? null : null;
+    const material=new PBRMaterial(sceneObjectId+"-display-material",this.scene);
+    material.metallic=0; material.roughness=1;
+    try {
+      const texture=new VideoTexture(sceneObjectId+"-video",source,this.scene,true,true,Texture.TRILINEAR_SAMPLINGMODE,{autoPlay:true,muted:true,loop:true});
+      texture.uScale=options.flipX?-1:1; texture.vScale=options.flipY?-1:1;
+      material.albedoTexture=texture; material.emissiveTexture=texture;
+      material.emissiveColor=new Color3(options.brightness,options.brightness,options.brightness);
+      runtime.mesh.material=material;
+      previous?.dispose?.();
+    } catch { material.dispose(); }
   }
 
   cameraSnapshot(): CustomCamera {
