@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { connectVizBridge } from "./live/vizbridge";
 import { FIXTURE_PROFILES } from "./fixtures/profiles";
 import { importGdtfFile } from "./fixtures/gdtf";
+import { validatePatch } from "./fixtures/patch-validation";
 import { LOCATION_PRESETS } from "./locations/presets";
 import { connectStudioMedia, type DisplaySurface, type StudioMediaFrame } from "./live/lumastudio";
 import { fixtureFrameFromDmxPacket } from "./live/artnet";
@@ -82,6 +84,37 @@ function cloneObjects(): SceneObject[] {
   }));
 }
 
+function loadDisplaySurfaces(): DisplaySurface[] {
+  try {
+    const raw=localStorage.getItem("lumaviz.display-surfaces");
+    if(!raw)return [];
+    const parsed=JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+
+function resolveStudioMediaSource(frame: StudioMediaFrame | null, outputId: string): { url?: string; label: string; supported: boolean } {
+  if(!frame || frame.outputId!==outputId) return { label:"Waiting for Studio output", supported:true };
+  if(frame.program?.state==="black") return { label:"Program black", supported:true };
+  if(frame.program?.state==="clear") return { label:"Program clear", supported:true };
+  const clips=frame.program?.clips?.filter(clip=>clip.enabled) ?? [];
+  const position=frame.positionSeconds;
+  const active=[...clips].reverse().find(clip=>{
+    if(clip.playbackMode==="section" && clip.sectionId && clip.sectionId!==frame.sectionId) return false;
+    const elapsed=position-clip.timelineStartSeconds;
+    if(elapsed<0)return false;
+    if(clip.sourceOutSeconds!==undefined) return elapsed <= Math.max(0,clip.sourceOutSeconds-clip.sourceInSeconds);
+    return true;
+  });
+  if(!active) return { label:"No active Studio clip", supported:true };
+  if(active.source.kind==="youtube") return { label:active.name+" · YouTube preview pending", supported:false };
+  try {
+    return { url:convertFileSrc(active.source.path), label:active.name, supported:true };
+  } catch {
+    return { label:active.name+" · local file unavailable", supported:false };
+  }
+}
+
 function makeFixture(index: number): FixtureDefinition {
   return {
     id: "fixture-" + Date.now() + "-" + index,
@@ -109,6 +142,7 @@ export default function App() {
   const cleanupRef = useRef<null | (() => void | Promise<void>)>(null);
   const directRef = useRef<LumaRigConnection | null>(null);
   const lastFrameRef = useRef<FixtureFrame | null>(null);
+  const cameraSnapshotRef = useRef<CustomCamera | null>(null);
 
   const [page, setPage] = useState<PageId>("visualize");
   const [dimensions, setDimensions] = useState<SceneDimensions>({ ...DEFAULT_DIMENSIONS });
@@ -143,9 +177,11 @@ export default function App() {
   const [activeLocationId, setActiveLocationId] = useState<string>("");
   const [studioFrame,setStudioFrame]=useState<StudioMediaFrame|null>(null);
   const [studioMediaState,setStudioMediaState]=useState<"offline"|"connected">("offline");
-  const [displaySurfaces,setDisplaySurfaces]=useState<DisplaySurface[]>([]);
+  const [displaySurfaces,setDisplaySurfaces]=useState<DisplaySurface[]>(loadDisplaySurfaces);
 
   useEffect(()=>{ let stop:(()=>void)|undefined; void connectStudioMedia("local://lumastudio-media",{onOpen:()=>setStudioMediaState("connected"),onClose:()=>setStudioMediaState("offline"),onFrame:setStudioFrame}).then(unlisten=>{stop=unlisten;}); return()=>stop?.(); },[]);
+
+  useEffect(()=>{ localStorage.setItem("lumaviz.display-surfaces",JSON.stringify(displaySurfaces)); },[displaySurfaces]);
 
   useEffect(() => {
     fixturesRef.current = fixtures;
@@ -184,17 +220,49 @@ export default function App() {
             status: "pending"
           });
         }
-      }
+      },
+      (transformedObject) => {
+        setObjects((current)=>current.map((object)=>object.id===transformedObject.id ? {
+          ...transformedObject,
+          position:{...transformedObject.position},
+          rotation:{...transformedObject.rotation},
+          size:{...transformedObject.size}
+        } : object));
+        if(directRef.current){
+          directRef.current.sendStageChange({
+            id:"lumaviz-"+Date.now()+"-"+transformedObject.id,
+            entityId:transformedObject.id,
+            entityKind:"object",
+            category:"scenery",
+            source:"lumaviz",
+            baseRevision:sceneVersion,
+            createdAt:new Date().toISOString(),
+            summary:transformedObject.name+" position / rotation",
+            before:null,
+            after:{position:transformedObject.position,rotation:transformedObject.rotation,size:transformedObject.size},
+            status:"pending"
+          });
+        }
+      },
+      setSelectedObjectId
     );
 
     sceneRef.current = viz;
     viz.setTool(tool);
-    const activeCustomCamera = customCameras.find((camera) => camera.id === activeCustomCameraId);
-    if (activeCustomCamera) viz.applyCustomCamera(activeCustomCamera);
-    else viz.setView(activeView);
+    if (visualizerMode === "2d") {
+      if (cameraSnapshotRef.current) viz.restoreCamera(cameraSnapshotRef.current);
+      viz.setPlanView(true);
+    } else if (cameraSnapshotRef.current) {
+      viz.restoreCamera(cameraSnapshotRef.current);
+    } else {
+      const activeCustomCamera = customCameras.find((camera) => camera.id === activeCustomCameraId);
+      if (activeCustomCamera) viz.applyCustomCamera(activeCustomCamera);
+      else viz.setView(activeView);
+    }
     if (lastFrameRef.current) viz.applyFrame(lastFrameRef.current);
 
     return () => {
+      cameraSnapshotRef.current = viz.cameraSnapshot();
       if (sceneRef.current === viz) sceneRef.current = null;
       viz.dispose();
     };
@@ -273,6 +341,29 @@ export default function App() {
     () => objects.find((object) => object.id === selectedObjectId) ?? null,
     [objects, selectedObjectId]
   );
+
+  const patchReport = useMemo(() => validatePatch(fixtures), [fixtures]);
+  const displayMedia = useMemo(() => new Map(displaySurfaces.map(surface => [surface.id, resolveStudioMediaSource(studioFrame, surface.sourceOutputId)])), [displaySurfaces, studioFrame]);
+
+  useEffect(() => {
+    const viz=sceneRef.current;
+    if(!viz)return;
+    const timers:number[]=[];
+    for(const surface of displaySurfaces){
+      if(!surface.sceneObjectId)continue;
+      const media=displayMedia.get(surface.id);
+      const apply=()=>viz.setDisplaySurfaceMedia(surface.sceneObjectId!,media?.url,{
+        brightness:surface.brightness,
+        fit:surface.fit,
+        flipX:surface.flipX,
+        flipY:surface.flipY,
+        rotation:surface.rotation
+      });
+      if(surface.latencyMs>0)timers.push(window.setTimeout(apply,surface.latencyMs));
+      else apply();
+    }
+    return()=>timers.forEach(timer=>window.clearTimeout(timer));
+  },[displaySurfaces,displayMedia,page,sceneVersion]);
 
   async function cleanupConnection() {
     const cleanup = cleanupRef.current;
@@ -514,6 +605,8 @@ export default function App() {
       activeView,
       customCameras,
       activeCustomCameraId,
+      displaySurfaces,
+      visualizerMode,
       activeLocationId,
       sharedShowName,
       sharedShowRevision
@@ -533,6 +626,8 @@ export default function App() {
       activeView?: ViewPreset;
       customCameras?: CustomCamera[];
       activeCustomCameraId?: string | null;
+      displaySurfaces?: DisplaySurface[];
+      visualizerMode?: "3d" | "2d";
       activeLocationId?: string;
       sharedShowName?: string;
       sharedShowRevision?: number;
@@ -545,6 +640,8 @@ export default function App() {
     if (saved.activeView) setActiveView(saved.activeView);
     if (saved.customCameras) setCustomCameras(saved.customCameras);
     setActiveCustomCameraId(saved.activeCustomCameraId ?? null);
+    if (saved.displaySurfaces) setDisplaySurfaces(saved.displaySurfaces);
+    if (saved.visualizerMode) setVisualizerMode(saved.visualizerMode);
     setActiveLocationId(saved.activeLocationId ?? "");
     if(saved.sharedShowName)setSharedShowName(saved.sharedShowName);
     if(typeof saved.sharedShowRevision==="number")setSharedShowRevision(saved.sharedShowRevision);
@@ -563,9 +660,12 @@ export default function App() {
     setActiveView("foh");
     setCustomCameras([]);
     setActiveCustomCameraId(null);
-    setSelected(null);
+    setDisplaySurfaces([]);
+    setVisualizerMode("3d");
     setActiveLocationId("");
     setSharedShowName("Local Scene");
+    cameraSnapshotRef.current=null;
+    setSelected(null);
     setSceneVersion((value) => value + 1);
     setConnectionMessage("New local scene · outputs unchanged");
   }
@@ -585,7 +685,12 @@ export default function App() {
   }
 
   function updateBuildObject(id: string, update: (object: SceneObject) => SceneObject) {
-    setObjects((current) => current.map((object) => object.id === id ? update(object) : object));
+    setObjects((current) => current.map((object) => {
+      if(object.id!==id)return object;
+      const next=update(object);
+      sceneRef.current?.updateSceneObject(next);
+      return next;
+    }));
   }
 
   function deleteBuildObject(id: string) {
@@ -778,7 +883,8 @@ export default function App() {
       {page === "build" && (
         <section className="workspace">
           <aside className="scene-panel">
-            <PanelHeading title="STAGE / VENUE" /><div className="venue-sidebar"><label>VENUE</label><select value={activeLocationId} onChange={e=>loadLocation(e.target.value)}><option value="">Custom / Current Scene</option>{LOCATION_PRESETS.map(location=><option key={location.id} value={location.id}>{location.name}{location.estimated?" · estimated":""}</option>)}</select><small>{activeLocationId?"Shared venue preset loaded":"Custom venue state"}</small></div>
+            <PanelHeading title="STAGE / VENUE" />
+            <div className="venue-sidebar"><label>VENUE</label><select value={activeLocationId} onChange={e=>loadLocation(e.target.value)}><option value="">Custom / Current Scene</option>{LOCATION_PRESETS.map(location=><option key={location.id} value={location.id}>{location.name}{location.estimated?" · estimated":""}</option>)}</select><small>{activeLocationId?"Shared venue preset loaded":"Custom venue state"}</small></div>
             <div className="fixture-commandbar"><button onClick={() => sceneRef.current?.selectAllFixtures()}>ALL</button><button onClick={duplicateSelected}>DUP</button><button onClick={() => arraySelected(4)}>ARRAY ×4</button><button className={snapEnabled ? "active" : ""} onClick={() => setSnapEnabled(v => !v)}>SNAP</button><input type="number" min="0.01" step="0.05" value={snapStep} onChange={e=>setSnapStep(Math.max(.01,Number(e.target.value)||.25))}/></div>
             <div className="tree">
               <TreeStatic icon="▱" label="Venue / Room" />
@@ -792,7 +898,7 @@ export default function App() {
                   <button
                     key={object.id}
                     className={"tree-row fixture-row " + (selectedObjectId === object.id ? "selected" : "")}
-                    onClick={() => setSelectedObjectId(object.id)}
+                    onClick={() => { setSelectedObjectId(object.id); sceneRef.current?.selectSceneObject(object.id); }}
                   >
                     <span>{object.kind === "truss" ? "⌗" : object.kind === "platform" ? "▰" : "◫"}</span>
                     <span>{object.name}</span>
@@ -837,6 +943,10 @@ export default function App() {
                     <option value="truss">Truss</option>
                     <option value="platform">Platform / Riser</option>
                     <option value="box">Scenic Box / Object</option>
+                    <option value="display">Display / Projection Surface</option>
+                    <option value="speaker">Speaker</option>
+                    <option value="pulpit">Pulpit / Lectern</option>
+                    <option value="scenery">Scenery</option>
                   </select>
                 </section>
 
@@ -925,12 +1035,17 @@ export default function App() {
             <button className="primary-button" onClick={addFixture}>＋ ADD FIXTURE</button>
           </div>
 
+          {(patchReport.conflicts.length>0 || patchReport.outOfRange.length>0) && <div className="patch-warning">
+            <strong>PATCH NEEDS ATTENTION</strong>
+            <span>{patchReport.conflicts.length ? `${patchReport.conflicts.length} overlap${patchReport.conflicts.length===1?"":"s"}` : ""}{patchReport.conflicts.length&&patchReport.outOfRange.length?" · ":""}{patchReport.outOfRange.length ? `${patchReport.outOfRange.length} fixture${patchReport.outOfRange.length===1?"":"s"} exceed channel 512` : ""}</span>
+          </div>}
+
           <div className="patch-table">
             <div className="patch-row patch-head">
               <span>Fixture</span><span>Profile</span><span>Universe</span><span>Address</span><span>Enabled</span><span />
             </div>
             {fixtures.map((fixture) => (
-              <div className="patch-row" key={fixture.id}>
+              <div className={"patch-row " + (patchReport.conflicts.some(conflict=>conflict.fixtures.some(item=>item.id===fixture.id)) || patchReport.outOfRange.some(span=>span.fixtureId===fixture.id) ? "patch-conflict" : "")} key={fixture.id}>
                 <input
                   value={fixture.name}
                   onChange={(event) => updateFixture(fixture.id, (current) => ({ ...current, name: event.target.value }))}
@@ -995,7 +1110,7 @@ export default function App() {
               {(["fixtures","groups","scene","views"] as const).map((tab) => <button key={tab} className={browserTab === tab ? "active" : ""} onClick={() => setBrowserTab(tab)}>{tab.toUpperCase()}</button>)}
             </div>
             <div className="tree">
-              {browserTab === "scene" && <><TreeStatic icon="▱" label="Room" /><TreeStatic icon="▰" label="Stage" />{objects.map((object) => <TreeStatic key={object.id} icon="⌗" label={object.name} />)}</>}
+              {browserTab === "scene" && <><TreeStatic icon="▱" label="Room" /><TreeStatic icon="▰" label="Stage" />{objects.map((object) => <button key={object.id} className={"tree-row " + (selectedObjectId===object.id ? "selected" : "")} onClick={()=>{setSelectedObjectId(object.id);sceneRef.current?.selectSceneObject(object.id);}}><span>{object.kind==="display"?"▣":"⌗"}</span><span>{object.name}</span></button>)}</>}
               {browserTab === "views" && CAMERA_VIEWS.map((view) => <button key={view.id} className={"tree-row " + (activeView === view.id ? "selected" : "")} onClick={() => setView(view.id)}><span>◉</span><span>{view.label}</span></button>)}
               {browserTab === "groups" && [...new Set(fixtures.map((fixture) => fixture.group).filter(Boolean))].map((group) => <div key={group} className="tree-section"><div className="tree-label"><span>⌄</span>{group}</div>{fixtures.filter((fixture) => fixture.group === group).map((fixture) => <button key={fixture.id} className={"tree-row fixture-row " + (selected?.id === fixture.id ? "selected" : "")} onClick={() => selectFixture(fixture.id)}><span className={"fixture-icon " + fixture.kind}/><span>{fixture.name}</span></button>)}</div>)}
               {browserTab === "fixtures" && <div className="tree-section">
@@ -1270,7 +1385,31 @@ export default function App() {
         </section>
       )}
 
-      {page === "screens" && <section className="library-page"><header className="section-heading"><div><span>DISPLAY SURFACES</span><h2>SCREEN ROUTING</h2><small>LumaStudio {studioMediaState} · {studioFrame ? `Output ${studioFrame.outputId} · ${studioFrame.positionSeconds.toFixed(1)}s` : "waiting for media"}</small></div><button onClick={()=>setDisplaySurfaces(current=>[...current,{id:crypto.randomUUID(),name:`Display ${current.length+1}`,sceneObjectId:objects.find(o=>/screen|display|tv/i.test(o.name))?.id,sourceOutputId:"program-1",fit:"fit",brightness:1,flipX:false,flipY:false,rotation:0,latencyMs:0}])}>+ DISPLAY</button></header><div className="shared-library-grid">{displaySurfaces.map(surface=><article key={surface.id}><strong>{surface.name}</strong><label>SCREEN OBJECT<select value={surface.sceneObjectId??""} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,sceneObjectId:e.target.value}:x))}><option value="">Choose screen</option>{objects.filter(o=>/screen|display|tv/i.test(o.name)).map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label><label>SOURCE<select value={surface.sourceOutputId} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,sourceOutputId:e.target.value}:x))}><option value="program-1">LumaStudio · Program 1</option></select></label><label>FIT<select value={surface.fit} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,fit:e.target.value as DisplaySurface["fit"]}:x))}><option value="fit">Fit</option><option value="fill">Fill</option><option value="stretch">Stretch</option></select></label><label>BRIGHTNESS<input type="range" min="0" max="2" step=".05" value={surface.brightness} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,brightness:Number(e.target.value)}:x))}/></label><label>LATENCY <input type="number" value={surface.latencyMs} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,latencyMs:Number(e.target.value)}:x))}/> ms</label></article>)}</div></section>}
+      {page === "screens" && <section className="library-page">
+        <header className="section-heading">
+          <div><span>DISPLAY SURFACES</span><h2>SCREEN ROUTING</h2><small>LumaStudio {studioMediaState} · {studioFrame ? `Output ${studioFrame.outputId} · ${studioFrame.positionSeconds.toFixed(1)}s` : "waiting for media"}</small></div>
+          <button onClick={()=>setDisplaySurfaces(current=>[...current,{id:crypto.randomUUID(),name:`Display ${current.length+1}`,sceneObjectId:objects.find(o=>o.kind==="display")?.id,sourceOutputId:"program-1",fit:"fit",brightness:1,flipX:false,flipY:false,rotation:0,latencyMs:0}])}>+ DISPLAY</button>
+        </header>
+        <div className="shared-library-grid screen-routing-grid">
+          {displaySurfaces.map(surface=>{
+            const media=displayMedia.get(surface.id);
+            return <article key={surface.id} className="screen-route-card">
+              <div className="screen-route-head"><div><span>{media?.url?"LIVE MEDIA":media?.supported===false?"SOURCE LIMITED":"READY"}</span><strong>{surface.name}</strong><small>{media?.label ?? "Waiting for Studio"}</small></div><button className="danger-button" onClick={()=>setDisplaySurfaces(all=>all.filter(item=>item.id!==surface.id))}>REMOVE</button></div>
+              <label>SCREEN OBJECT<select value={surface.sceneObjectId??""} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,sceneObjectId:e.target.value||undefined}:x))}><option value="">Choose screen</option>{objects.filter(o=>o.kind==="display").map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
+              <label>SOURCE<select value={surface.sourceOutputId} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,sourceOutputId:e.target.value}:x))}><option value="program-1">LumaStudio · Program 1</option></select></label>
+              <label>FIT<select value={surface.fit} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,fit:e.target.value as DisplaySurface["fit"]}:x))}><option value="fit">Fit</option><option value="fill">Fill</option><option value="stretch">Stretch</option></select></label>
+              <label>BRIGHTNESS<input type="range" min="0" max="2" step=".05" value={surface.brightness} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,brightness:Number(e.target.value)}:x))}/></label>
+              <div className="screen-route-options">
+                <label><input type="checkbox" checked={surface.flipX} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,flipX:e.target.checked}:x))}/> FLIP X</label>
+                <label><input type="checkbox" checked={surface.flipY} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,flipY:e.target.checked}:x))}/> FLIP Y</label>
+              </div>
+              <label>ROTATION<input type="number" step="90" value={surface.rotation} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,rotation:Number(e.target.value)}:x))}/></label>
+              <label>LATENCY <input type="number" min="0" value={surface.latencyMs} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,latencyMs:Math.max(0,Number(e.target.value)||0)}:x))}/> ms</label>
+            </article>;
+          })}
+          {!displaySurfaces.length && <div className="empty-state"><strong>No display routes yet</strong><span>Load a venue with semantic display objects, then add a route from LumaStudio Program 1.</span></div>}
+        </div>
+      </section>}
 
       {page === "library" && <section className="library-page"><header className="section-heading"><div><span>SHARED SHOW LIBRARY</span><h2>{sharedShowName}</h2><small>Revision {sharedShowRevision} · synchronized with LumaRig Direct</small></div></header><div className="library-location-summary"><span>VENUE</span><strong>{LOCATION_PRESETS.find(location=>location.id===activeLocationId)?.name??"Custom / Current Scene"}</strong><small>Change venue from STAGE / VENUE so the room remains part of the scene workflow.</small><button onClick={()=>setPage("build")}>OPEN STAGE / VENUE</button></div><div className="shared-library-grid">{sharedShowLibrary.length ? sharedShowLibrary.map((item) => <article key={item.id}><span>{item.status === "template" ? "TEMPLATE" : item.status === "show" ? "SERVICE SHOW" : "DRAFT"}</span><strong>{item.name}</strong><small>{new Date(item.savedAt).toLocaleString()}</small><button onClick={() => { setSharedShowName(item.name); setConnectionMessage(item.name+" selected from Shared Show Library"); }}>LOAD SHOW</button></article>) : <div className="empty-state"><strong>No shared projects received yet</strong><span>Connect LumaRig Direct to receive templates and service shows.</span></div>}</div></section>}
 
@@ -1305,7 +1444,7 @@ export default function App() {
           <div>{sharedShowName} · R{sharedShowRevision}{sharedShowLibrary.length ? ` · ${sharedShowLibrary.length} shared shows` : ""}</div>
           <div>{patchedUniverses.length} universe{patchedUniverses.length === 1 ? "" : "s"}</div>
           <div className="status-spacer" />
-          <div>v0.2.0</div>
+          <div>v0.4.0</div>
         </footer>
       )}
     </main>
