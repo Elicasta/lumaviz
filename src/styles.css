@@ -706,7 +706,7 @@ select:focus {
 
 .patch-row {
   display: grid;
-  grid-template-columns: minmax(150px, 1.3fr) minmax(220px, 1.7fr) 100px 100px 90px 72px;
+  grid-template-columns: minmax(135px,1.15fr) minmax(180px,1.45fr) minmax(150px,1.25fr) 78px 78px 76px 78px 68px;
   align-items: center;
   gap: 8px;
   min-height: 48px;
@@ -1399,3 +1399,28 @@ body { background:#07090b; }
 .stage-sync-actions button:first-child:not(:disabled) { border-color:#315f43; color:#aee8c0; }
 .stage-sync-actions button:last-child { border-color:#5d373d; color:#d998a0; }
 .stage-sync-empty { padding:10px; border:1px dashed #273646; color:#607286; font-size:9px; text-align:center; }
+
+
+.patch-footprint-readout {
+  color:#9baaba; font-size:9px; font-variant-numeric:tabular-nums; text-align:center;
+}
+.fixture-profile-summary {
+  display:grid; gap:7px; margin-top:9px; padding:9px; border:1px solid #29394a; background:#09111a;
+}
+.profile-summary-head { display:grid; gap:4px; }
+.profile-summary-head>span { width:max-content; padding:3px 5px; border:1px solid #5a4330; color:#c6a37e; font-size:7px; font-weight:900; letter-spacing:.08em; }
+.profile-summary-head>span.verified { border-color:#315e43; color:#8bd9a5; background:#0d2116; }
+.profile-summary-head strong { color:#d9e7f4; font-size:10px; }
+.fixture-profile-summary>small { color:#697b8d; font-size:8px; line-height:1.4; }
+.fixture-profile-summary dl { display:grid; gap:3px; margin:0; }
+.fixture-profile-summary dl div { display:flex; justify-content:space-between; gap:10px; font-size:8px; }
+.fixture-profile-summary dt { color:#627487; }
+.fixture-profile-summary dd { margin:0; color:#aebfd0; text-align:right; }
+.capability-chips { display:flex; flex-wrap:wrap; gap:4px; }
+.capability-chips span { padding:3px 5px; border:1px solid #2b4359; background:#0d1a25; color:#7da9ce; font-size:7px; text-transform:uppercase; }
+.selected-patch-warning { padding:6px; border:1px solid #664047; background:#211215; color:#df959e; font-size:7px; font-weight:900; letter-spacing:.08em; text-align:center; }
+
+@media (max-width: 1120px) {
+  .patch-table { overflow-x:auto; }
+  .patch-row { min-width:1050px; }
+}
