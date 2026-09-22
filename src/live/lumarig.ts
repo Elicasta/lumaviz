@@ -3,6 +3,7 @@ import type { FixtureFrame } from "../viz/types";
 export interface LumaRigConnection {
   socket: WebSocket;
   sendStageChange(change: unknown): void;
+  sendPatchUpdate(mutation: unknown): void;
   sendPreviewFrame(dataUrl: string, view?: string): void;
   close(): void;
 }
@@ -22,6 +23,7 @@ export function connectToLumaRig(
     onOpen?: () => void;
     onFrame: (frame: FixtureFrame) => void;
     onStageChange?: (change: unknown) => void;
+    onSharedShowSnapshot?: (snapshot: unknown) => void;
     onClose?: () => void;
     onError?: (message: string) => void;
   }
@@ -32,7 +34,7 @@ export function connectToLumaRig(
     socket.send(JSON.stringify({
       type: "lumaviz.hello",
       protocolVersion: 1,
-      capabilities: ["fixture-frame-v1", "preview-frame-v1"]
+      capabilities: ["fixture-frame-v1", "preview-frame-v1", "shared-show-v1"]
     }));
     handlers.onOpen?.();
   });
@@ -40,6 +42,10 @@ export function connectToLumaRig(
   socket.addEventListener("message", (event) => {
     try {
       const message = JSON.parse(String(event.data)) as unknown;
+      if (message && typeof message === "object" && (message as { type?: string }).type === "shared-show.snapshot") {
+        handlers.onSharedShowSnapshot?.(message);
+        return;
+      }
       if (message && typeof message === "object" && (message as { type?: string }).type === "stage-change") {
         handlers.onStageChange?.((message as { change?: unknown }).change);
         return;
@@ -75,6 +81,9 @@ export function connectToLumaRig(
     socket,
     sendStageChange(change: unknown) {
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "stage-change", change }));
+    },
+    sendPatchUpdate(mutation: unknown) {
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(mutation));
     },
     sendPreviewFrame(dataUrl: string, view?: string) {
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "preview-frame", dataUrl, view, timestamp: Date.now() }));
