@@ -173,6 +173,7 @@ export default function App() {
   const [packetCount, setPacketCount] = useState(0);
   const [matchedFixtureCount, setMatchedFixtureCount] = useState(0);
   const [sharedShowRevision, setSharedShowRevision] = useState(1);
+  const sharedShowRevisionRef=useRef(1);
   const [sharedShowName, setSharedShowName] = useState("Local Scene");
   const [sharedShowLibrary, setSharedShowLibrary] = useState<Array<{id:string;name:string;savedAt:string;status:string}>>([]);
   const [activeLocationId, setActiveLocationId] = useState<string>("");
@@ -189,6 +190,7 @@ export default function App() {
   useEffect(()=>{ let stop:(()=>void)|undefined; void connectStudioMedia("local://lumastudio-media",{onOpen:()=>setStudioMediaState("connected"),onClose:()=>setStudioMediaState("offline"),onFrame:setStudioFrame}).then(unlisten=>{stop=unlisten;}); return()=>stop?.(); },[]);
 
   useEffect(()=>{ localStorage.setItem("lumaviz.display-surfaces",JSON.stringify(displaySurfaces)); },[displaySurfaces]);
+  useEffect(()=>{ sharedShowRevisionRef.current=sharedShowRevision; },[sharedShowRevision]);
   useEffect(()=>{ stageSyncModeRef.current=stageSyncMode; },[stageSyncMode]);
   useEffect(()=>{ stageRevisionRef.current=stageRevision; },[stageRevision]);
 
@@ -408,7 +410,10 @@ export default function App() {
     setMaterial(location.material);
     setCustomCameras(location.cameras.map(camera=>({...camera,position:{...camera.position},target:{...camera.target}})));
     setSceneVersion(version=>version+1);
-    directRef.current?.sendStageChange({type:"shared-location.update",source:"lumaviz",revision:sharedShowRevision+1,location:{id:location.id,name:location.name,version:location.version,estimated:location.estimated,dimensions:location.dimensions,objects:location.objects,cameras:location.cameras}});
+    const revision=sharedShowRevisionRef.current+1;
+    sharedShowRevisionRef.current=revision;
+    setSharedShowRevision(revision);
+    directRef.current?.sendStageChange({type:"shared-location.update",source:"lumaviz",revision,location:{id:location.id,name:location.name,version:location.version,estimated:location.estimated,dimensions:location.dimensions,objects:location.objects,cameras:location.cameras}});
   }
 
   function duplicateSelected() {
@@ -644,15 +649,15 @@ export default function App() {
         setConnectionMessage("LumaRig Direct connected");
         setLastPacketSource(lumaRigUrl);
       },
-      onSharedShowActivation: (value) => { if (!isSharedShowActivation(value)) return; setSharedShowRevision(value.revision); setSharedShowName(value.showId); const location=value.locationId?LOCATION_PRESETS.find(item=>item.id===value.locationId):undefined; if (value.locationId&&location) loadLocation(value.locationId); connection.sendSharedShowAck({type:"shared-show.ack",protocol:"shared-show-v1",showId:value.showId,app:"lumaviz",revision:value.revision,state:value.locationId&&!location?"missing":"loaded",detail:value.locationId&&!location?"Location preset missing":"Venue loaded; outputs unchanged",timestamp:Date.now()}); setConnectionMessage(value.locationId&&!location?"Shared show loaded · venue preset missing":"Shared show loaded · outputs unchanged"); },
+      onSharedShowActivation: (value) => { if (!isSharedShowActivation(value)) return; setSharedShowRevision(value.revision); sharedShowRevisionRef.current=value.revision; setSharedShowName(value.showId); const location=value.locationId?LOCATION_PRESETS.find(item=>item.id===value.locationId):undefined; if (value.locationId&&location) loadLocation(value.locationId); connection.sendSharedShowAck({type:"shared-show.ack",protocol:"shared-show-v1",showId:value.showId,app:"lumaviz",revision:value.revision,state:value.locationId&&!location?"missing":"loaded",detail:value.locationId&&!location?"Location preset missing":"Venue loaded; outputs unchanged",timestamp:Date.now()}); setConnectionMessage(value.locationId&&!location?"Shared show loaded · venue preset missing":"Shared show loaded · outputs unchanged"); },
       onSharedShowConflict: (value) => {
         const conflict = value as { revision?:number; reason?:string };
-        if (typeof conflict.revision === "number") setSharedShowRevision(conflict.revision);
+        if (typeof conflict.revision === "number") { setSharedShowRevision(conflict.revision); sharedShowRevisionRef.current=conflict.revision; }
         setConnectionMessage("Shared show conflict · LumaRig kept newer revision" + (conflict.revision ? " R" + conflict.revision : ""));
       },
       onSharedShowSnapshot: (value) => {
         const snapshot = value as { revision?:number; show?:{id?:string;name?:string}; patch?:Array<{id:string;name:string;profileId:string;modeId:string;universe:number;address:number;group?:string;transform?:{position?:{x:number;y:number;z:number};rotation?:{yaw:number;pitch:number;roll:number}}}>; library?:Array<{id:string;name:string;savedAt:string;status:string}> };
-        if (typeof snapshot.revision === "number") setSharedShowRevision(snapshot.revision);
+        if (typeof snapshot.revision === "number") { setSharedShowRevision(snapshot.revision); sharedShowRevisionRef.current=snapshot.revision; }
         if (snapshot.show?.name) setSharedShowName(snapshot.show.name);
         if (snapshot.library) setSharedShowLibrary(snapshot.library);
         if (snapshot.patch?.length) setFixtures((current) => snapshot.patch!.map((item) => {
@@ -774,7 +779,7 @@ export default function App() {
     if (saved.visualizerMode) setVisualizerMode(saved.visualizerMode);
     setActiveLocationId(saved.activeLocationId ?? "");
     if(saved.sharedShowName)setSharedShowName(saved.sharedShowName);
-    if(typeof saved.sharedShowRevision==="number")setSharedShowRevision(saved.sharedShowRevision);
+    if(typeof saved.sharedShowRevision==="number"){ setSharedShowRevision(saved.sharedShowRevision); sharedShowRevisionRef.current=saved.sharedShowRevision; }
     if(saved.stageSyncMode)setStageSyncMode(saved.stageSyncMode);
     if(typeof saved.stageRevision==="number"){
       setStageRevision(saved.stageRevision);
@@ -799,6 +804,8 @@ export default function App() {
     setVisualizerMode("3d");
     setActiveLocationId("");
     setSharedShowName("Local Scene");
+    setSharedShowRevision(1);
+    sharedShowRevisionRef.current=1;
     setStageSyncMode("review");
     setStageRevision(1);
     stageRevisionRef.current=1;
@@ -842,17 +849,30 @@ export default function App() {
   }
 
   function updateFixture(id: string, update: (fixture: FixtureDefinition) => FixtureDefinition) {
-    setFixtures((current) => current.map((fixture) => {
-      if (fixture.id !== id) return fixture;
-      const next = update(fixture);
-      const revision = sharedShowRevision + 1;
-      setSharedShowRevision(revision);
-      directRef.current?.sendPatchUpdate({
-        type: "shared-show.patch.update", revision, source: "lumaviz", showId: sharedShowName,
-        fixture: { id: next.id, name: next.name, profileId: next.patch.profileId, modeId: next.patch.modeId ?? "", universe: next.patch.universe, address: next.patch.address, group: (next as FixtureDefinition & {group?:string}).group, position: next.position, rotation: next.rotation }
-      });
-      return next;
-    }));
+    const currentFixture=fixturesRef.current.find(fixture=>fixture.id===id);
+    if(!currentFixture)return;
+    const next=update(currentFixture);
+    const nextFixtures=fixturesRef.current.map(fixture=>fixture.id===id?next:fixture);
+    fixturesRef.current=nextFixtures;
+    setFixtures(nextFixtures);
+    if(selected?.id===id){
+      setSelected(current=>current ? {
+        ...current,
+        ...next,
+        position:{...next.position},
+        rotation:{...next.rotation},
+        patch:{...next.patch}
+      } : current);
+    }
+    if(currentFixture.kind!==next.kind)setSceneVersion(version=>version+1);
+
+    const revision=sharedShowRevisionRef.current+1;
+    sharedShowRevisionRef.current=revision;
+    setSharedShowRevision(revision);
+    directRef.current?.sendPatchUpdate({
+      type:"shared-show.patch.update",revision,source:"lumaviz",showId:sharedShowName,
+      fixture:{id:next.id,name:next.name,profileId:next.patch.profileId,modeId:next.patch.modeId??"",universe:next.patch.universe,address:next.patch.address,group:next.group,position:next.position,rotation:next.rotation}
+    });
   }
 
   function deleteFixture(id: string) {
@@ -926,7 +946,9 @@ export default function App() {
 
   const sourceLabel = source === "lumarig"
     ? "LumaRig Direct"
-    : source === "artnet"
+    : source === "vizbridge"
+      ? "VizBridge"
+      : source === "artnet"
       ? "Art-Net"
       : source === "sacn"
         ? "sACN"
