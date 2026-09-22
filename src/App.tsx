@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { connectVizBridge } from "./live/vizbridge";
-import { FIXTURE_PROFILES } from "./fixtures/profiles";
+import { FIXTURE_PROFILES, registerFixtureProfile } from "./fixtures/profiles";
 import { importGdtfFile } from "./fixtures/gdtf";
+import { validatePatch } from "./fixtures/patch-validation";
 import { LOCATION_PRESETS } from "./locations/presets";
 import { connectStudioMedia, type DisplaySurface, type StudioMediaFrame } from "./live/lumastudio";
 import { fixtureFrameFromDmxPacket } from "./live/artnet";
@@ -24,6 +26,7 @@ import type {
 } from "./viz/types";
 import { displayDistance, inputDistance } from "./viz/units";
 import { isSharedShowActivation } from "./core/shared-show";
+import { canAutoApplyStageChange, stageChangeConflicts, type StageChange, type StageSyncMode } from "./core/stage-sync";
 
 type PageId = "build" | "patch" | "visualize" | "cameras" | "screens" | "connect" | "library" | "monitor";
 type InputSource = "demo" | "lumarig" | "vizbridge" | "artnet" | "sacn" | "none";
@@ -82,6 +85,37 @@ function cloneObjects(): SceneObject[] {
   }));
 }
 
+function loadDisplaySurfaces(): DisplaySurface[] {
+  try {
+    const raw=localStorage.getItem("lumaviz.display-surfaces");
+    if(!raw)return [];
+    const parsed=JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+
+function resolveStudioMediaSource(frame: StudioMediaFrame | null, outputId: string): { url?: string; label: string; supported: boolean } {
+  if(!frame || frame.outputId!==outputId) return { label:"Waiting for Studio output", supported:true };
+  if(frame.program?.state==="black") return { label:"Program black", supported:true };
+  if(frame.program?.state==="clear") return { label:"Program clear", supported:true };
+  const clips=frame.program?.clips?.filter(clip=>clip.enabled) ?? [];
+  const position=frame.positionSeconds;
+  const active=[...clips].reverse().find(clip=>{
+    if(clip.playbackMode==="section" && clip.sectionId && clip.sectionId!==frame.sectionId) return false;
+    const elapsed=position-clip.timelineStartSeconds;
+    if(elapsed<0)return false;
+    if(clip.sourceOutSeconds!==undefined) return elapsed <= Math.max(0,clip.sourceOutSeconds-clip.sourceInSeconds);
+    return true;
+  });
+  if(!active) return { label:"No active Studio clip", supported:true };
+  if(active.source.kind==="youtube") return { label:active.name+" · YouTube preview pending", supported:false };
+  try {
+    return { url:convertFileSrc(active.source.path), label:active.name, supported:true };
+  } catch {
+    return { label:active.name+" · local file unavailable", supported:false };
+  }
+}
+
 function makeFixture(index: number): FixtureDefinition {
   return {
     id: "fixture-" + Date.now() + "-" + index,
@@ -109,6 +143,7 @@ export default function App() {
   const cleanupRef = useRef<null | (() => void | Promise<void>)>(null);
   const directRef = useRef<LumaRigConnection | null>(null);
   const lastFrameRef = useRef<FixtureFrame | null>(null);
+  const cameraSnapshotRef = useRef<CustomCamera | null>(null);
 
   const [page, setPage] = useState<PageId>("visualize");
   const [dimensions, setDimensions] = useState<SceneDimensions>({ ...DEFAULT_DIMENSIONS });
@@ -138,14 +173,26 @@ export default function App() {
   const [packetCount, setPacketCount] = useState(0);
   const [matchedFixtureCount, setMatchedFixtureCount] = useState(0);
   const [sharedShowRevision, setSharedShowRevision] = useState(1);
+  const sharedShowRevisionRef=useRef(1);
   const [sharedShowName, setSharedShowName] = useState("Local Scene");
   const [sharedShowLibrary, setSharedShowLibrary] = useState<Array<{id:string;name:string;savedAt:string;status:string}>>([]);
   const [activeLocationId, setActiveLocationId] = useState<string>("");
+  const [stageSyncMode,setStageSyncMode]=useState<StageSyncMode>("review");
+  const [stageRevision,setStageRevision]=useState(1);
+  const [stageChanges,setStageChanges]=useState<StageChange[]>([]);
+  const stageSyncModeRef=useRef<StageSyncMode>("review");
+  const stageRevisionRef=useRef(1);
+  const pendingStageChanges=stageChanges.filter(change=>change.status==="pending"||change.status==="conflict");
   const [studioFrame,setStudioFrame]=useState<StudioMediaFrame|null>(null);
   const [studioMediaState,setStudioMediaState]=useState<"offline"|"connected">("offline");
-  const [displaySurfaces,setDisplaySurfaces]=useState<DisplaySurface[]>([]);
+  const [displaySurfaces,setDisplaySurfaces]=useState<DisplaySurface[]>(loadDisplaySurfaces);
 
   useEffect(()=>{ let stop:(()=>void)|undefined; void connectStudioMedia("local://lumastudio-media",{onOpen:()=>setStudioMediaState("connected"),onClose:()=>setStudioMediaState("offline"),onFrame:setStudioFrame}).then(unlisten=>{stop=unlisten;}); return()=>stop?.(); },[]);
+
+  useEffect(()=>{ localStorage.setItem("lumaviz.display-surfaces",JSON.stringify(displaySurfaces)); },[displaySurfaces]);
+  useEffect(()=>{ sharedShowRevisionRef.current=sharedShowRevision; },[sharedShowRevision]);
+  useEffect(()=>{ stageSyncModeRef.current=stageSyncMode; },[stageSyncMode]);
+  useEffect(()=>{ stageRevisionRef.current=stageRevision; },[stageRevision]);
 
   useEffect(() => {
     fixturesRef.current = fixtures;
@@ -176,25 +223,63 @@ export default function App() {
             entityKind: "fixture",
             category: "fixturePosition",
             source: "lumaviz",
-            baseRevision: sceneVersion,
+            baseRevision: stageRevisionRef.current,
             createdAt: new Date().toISOString(),
             summary: transformed.name + " position / rotation",
             before: { position: before.position, rotation: before.rotation },
             after: { position: transformed.position, rotation: transformed.rotation },
             status: "pending"
           });
+          const nextRevision=stageRevisionRef.current+1;
+          stageRevisionRef.current=nextRevision;
+          setStageRevision(nextRevision);
         }
-      }
+      },
+      (transformedObject) => {
+        setObjects((current)=>current.map((object)=>object.id===transformedObject.id ? {
+          ...transformedObject,
+          position:{...transformedObject.position},
+          rotation:{...transformedObject.rotation},
+          size:{...transformedObject.size}
+        } : object));
+        if(directRef.current){
+          directRef.current.sendStageChange({
+            id:"lumaviz-"+Date.now()+"-"+transformedObject.id,
+            entityId:transformedObject.id,
+            entityKind:"object",
+            category:"scenery",
+            source:"lumaviz",
+            baseRevision:sceneVersion,
+            createdAt:new Date().toISOString(),
+            summary:transformedObject.name+" position / rotation",
+            before:null,
+            after:{position:transformedObject.position,rotation:transformedObject.rotation,size:transformedObject.size},
+            status:"pending" as const
+          });
+          const nextRevision=stageRevisionRef.current+1;
+          stageRevisionRef.current=nextRevision;
+          setStageRevision(nextRevision);
+        }
+      },
+      setSelectedObjectId
     );
 
     sceneRef.current = viz;
     viz.setTool(tool);
-    const activeCustomCamera = customCameras.find((camera) => camera.id === activeCustomCameraId);
-    if (activeCustomCamera) viz.applyCustomCamera(activeCustomCamera);
-    else viz.setView(activeView);
+    if (visualizerMode === "2d") {
+      if (cameraSnapshotRef.current) viz.restoreCamera(cameraSnapshotRef.current);
+      viz.setPlanView(true);
+    } else if (cameraSnapshotRef.current) {
+      viz.restoreCamera(cameraSnapshotRef.current);
+    } else {
+      const activeCustomCamera = customCameras.find((camera) => camera.id === activeCustomCameraId);
+      if (activeCustomCamera) viz.applyCustomCamera(activeCustomCamera);
+      else viz.setView(activeView);
+    }
     if (lastFrameRef.current) viz.applyFrame(lastFrameRef.current);
 
     return () => {
+      cameraSnapshotRef.current = viz.cameraSnapshot();
       if (sceneRef.current === viz) sceneRef.current = null;
       viz.dispose();
     };
@@ -274,6 +359,33 @@ export default function App() {
     [objects, selectedObjectId]
   );
 
+  const patchReport = useMemo(() => validatePatch(fixtures), [fixtures]);
+  const displayMedia = useMemo(() => new Map(displaySurfaces.map(surface => [surface.id, resolveStudioMediaSource(studioFrame, surface.sourceOutputId)])), [displaySurfaces, studioFrame]);
+  const selectedProfile=useMemo(()=>selected ? FIXTURE_PROFILES.find(profile=>profile.id===selected.patch.profileId) : undefined,[selected]);
+  const selectedMode=useMemo(()=>selectedProfile?.modes.find(mode=>mode.id===selected?.patch.modeId) ?? selectedProfile?.modes[0],[selectedProfile,selected]);
+  const selectedPatchSpan=useMemo(()=>selected ? patchReport.spans.find(span=>span.fixtureId===selected.id) : undefined,[patchReport,selected]);
+  const selectedPatchConflict=useMemo(()=>selected ? patchReport.conflicts.some(conflict=>conflict.fixtures.some(item=>item.id===selected.id)) || patchReport.outOfRange.some(span=>span.fixtureId===selected.id) : false,[patchReport,selected]);
+
+  useEffect(() => {
+    const viz=sceneRef.current;
+    if(!viz)return;
+    const timers:number[]=[];
+    for(const surface of displaySurfaces){
+      if(!surface.sceneObjectId)continue;
+      const media=displayMedia.get(surface.id);
+      const apply=()=>viz.setDisplaySurfaceMedia(surface.sceneObjectId!,media?.url,{
+        brightness:surface.brightness,
+        fit:surface.fit,
+        flipX:surface.flipX,
+        flipY:surface.flipY,
+        rotation:surface.rotation
+      });
+      if(surface.latencyMs>0)timers.push(window.setTimeout(apply,surface.latencyMs));
+      else apply();
+    }
+    return()=>timers.forEach(timer=>window.clearTimeout(timer));
+  },[displaySurfaces,displayMedia,page,sceneVersion]);
+
   async function cleanupConnection() {
     const cleanup = cleanupRef.current;
     cleanupRef.current = null;
@@ -298,7 +410,10 @@ export default function App() {
     setMaterial(location.material);
     setCustomCameras(location.cameras.map(camera=>({...camera,position:{...camera.position},target:{...camera.target}})));
     setSceneVersion(version=>version+1);
-    directRef.current?.sendStageChange({type:"shared-location.update",source:"lumaviz",revision:sharedShowRevision+1,location:{id:location.id,name:location.name,version:location.version,estimated:location.estimated,dimensions:location.dimensions,objects:location.objects,cameras:location.cameras}});
+    const revision=sharedShowRevisionRef.current+1;
+    sharedShowRevisionRef.current=revision;
+    setSharedShowRevision(revision);
+    directRef.current?.sendStageChange({type:"shared-location.update",source:"lumaviz",revision,location:{id:location.id,name:location.name,version:location.version,estimated:location.estimated,dimensions:location.dimensions,objects:location.objects,cameras:location.cameras}});
   }
 
   function duplicateSelected() {
@@ -317,8 +432,9 @@ export default function App() {
   async function importFixtureFile(file: File) {
     try {
       const profile = await importGdtfFile(file);
-      if (!FIXTURE_PROFILES.some(item => item.id === profile.id)) FIXTURE_PROFILES.push(profile);
+      registerFixtureProfile(profile);
       setFixtureSearch(profile.model);
+      setConnectionMessage("Fixture profile imported · "+profile.manufacturer+" "+profile.model);
     } catch (error) { console.error(error); }
   }
 
@@ -426,6 +542,101 @@ export default function App() {
     if (!cleanup) setConnectionState("error");
   }
 
+
+  function normalizeIncomingRotation(value: unknown): {x:number;y:number;z:number}|undefined {
+    if(!value || typeof value!=="object")return undefined;
+    const rotation=value as Record<string,unknown>;
+    if(typeof rotation.x==="number"&&typeof rotation.y==="number"&&typeof rotation.z==="number"){
+      return {x:rotation.x,y:rotation.y,z:rotation.z};
+    }
+    if(typeof rotation.yaw==="number"&&typeof rotation.pitch==="number"&&typeof rotation.roll==="number"){
+      return {x:rotation.pitch,y:rotation.yaw,z:rotation.roll};
+    }
+    return undefined;
+  }
+
+  function normalizeIncomingVec3(value: unknown): {x:number;y:number;z:number}|undefined {
+    if(!value || typeof value!=="object")return undefined;
+    const vector=value as Record<string,unknown>;
+    return typeof vector.x==="number"&&typeof vector.y==="number"&&typeof vector.z==="number"
+      ? {x:vector.x,y:vector.y,z:vector.z}
+      : undefined;
+  }
+
+  function stageChangeSupported(change:StageChange):boolean {
+    return change.category==="fixturePosition" || change.category==="scenery" || change.category==="patch" || change.category==="fixtureProfile";
+  }
+
+  function applyIncomingStageChange(change:StageChange,approved=false):boolean {
+    if(!stageChangeSupported(change)){
+      setConnectionMessage("Stage Sync · "+change.category+" requires a future model upgrade");
+      return false;
+    }
+    const after=(change.after && typeof change.after==="object" ? change.after : {}) as Record<string,unknown>;
+    let applied=false;
+    let rebuild=false;
+
+    if(change.entityKind==="fixture" && change.category==="fixturePosition"){
+      const position=normalizeIncomingVec3(after.position);
+      const rotation=normalizeIncomingRotation(after.rotation);
+      if(position||rotation){
+        setFixtures(current=>current.map(fixture=>{
+          if(fixture.id!==change.entityId)return fixture;
+          const next={...fixture,position:position??fixture.position,rotation:rotation??fixture.rotation};
+          sceneRef.current?.updateFixtureTransform(fixture.id,next.position,next.rotation);
+          return next;
+        }));
+        applied=true;
+      }
+    } else if(change.entityKind==="object" && change.category==="scenery"){
+      const position=normalizeIncomingVec3(after.position);
+      const rotation=normalizeIncomingRotation(after.rotation);
+      const size=normalizeIncomingVec3(after.size);
+      setObjects(current=>current.map(object=>{
+        if(object.id!==change.entityId)return object;
+        const next={...object,position:position??object.position,rotation:rotation??object.rotation,size:size??object.size};
+        sceneRef.current?.updateSceneObject(next);
+        applied=true;
+        return next;
+      }));
+    } else if(change.entityKind==="fixture" && (change.category==="patch"||change.category==="fixtureProfile")){
+      setFixtures(current=>current.map(fixture=>{
+        if(fixture.id!==change.entityId)return fixture;
+        const patchAfter=(after.patch && typeof after.patch==="object" ? after.patch : after) as Record<string,unknown>;
+        const profileId=typeof patchAfter.profileId==="string"?patchAfter.profileId:fixture.patch.profileId;
+        const modeId=typeof patchAfter.modeId==="string"?patchAfter.modeId:fixture.patch.modeId;
+        const profile=FIXTURE_PROFILES.find(item=>item.id===profileId);
+        applied=true;
+        rebuild=true;
+        return {
+          ...fixture,
+          kind:profile?.kind??fixture.kind,
+          patch:{
+            ...fixture.patch,
+            profileId,
+            modeId,
+            universe:typeof patchAfter.universe==="number"?patchAfter.universe:fixture.patch.universe,
+            address:typeof patchAfter.address==="number"?patchAfter.address:fixture.patch.address,
+            enabled:typeof patchAfter.enabled==="boolean"?patchAfter.enabled:fixture.patch.enabled
+          }
+        };
+      }));
+    }
+
+    if(!applied)return false;
+    const nextRevision=Math.max(stageRevisionRef.current+1,change.baseRevision+1);
+    stageRevisionRef.current=nextRevision;
+    setStageRevision(nextRevision);
+    setStageChanges(current=>current.map(item=>item.id===change.id?{...item,status:approved?("approved" as const):("applied" as const)}:item));
+    if(rebuild)setSceneVersion(version=>version+1);
+    setConnectionMessage("Stage Sync · "+change.summary+" applied · R"+nextRevision);
+    return true;
+  }
+
+  function rejectStageChange(id:string){
+    setStageChanges(current=>current.map(change=>change.id===id?{...change,status:"rejected" as const}:change));
+  }
+
   async function connectDirect() {
     await cleanupConnection();
     setSource("lumarig");
@@ -438,15 +649,15 @@ export default function App() {
         setConnectionMessage("LumaRig Direct connected");
         setLastPacketSource(lumaRigUrl);
       },
-      onSharedShowActivation: (value) => { if (!isSharedShowActivation(value)) return; setSharedShowRevision(value.revision); setSharedShowName(value.showId); const location=value.locationId?LOCATION_PRESETS.find(item=>item.id===value.locationId):undefined; if (value.locationId&&location) loadLocation(value.locationId); connection.sendSharedShowAck({type:"shared-show.ack",protocol:"shared-show-v1",showId:value.showId,app:"lumaviz",revision:value.revision,state:value.locationId&&!location?"missing":"loaded",detail:value.locationId&&!location?"Location preset missing":"Venue loaded; outputs unchanged",timestamp:Date.now()}); setConnectionMessage(value.locationId&&!location?"Shared show loaded · venue preset missing":"Shared show loaded · outputs unchanged"); },
+      onSharedShowActivation: (value) => { if (!isSharedShowActivation(value)) return; setSharedShowRevision(value.revision); sharedShowRevisionRef.current=value.revision; setSharedShowName(value.showId); const location=value.locationId?LOCATION_PRESETS.find(item=>item.id===value.locationId):undefined; if (value.locationId&&location) loadLocation(value.locationId); connection.sendSharedShowAck({type:"shared-show.ack",protocol:"shared-show-v1",showId:value.showId,app:"lumaviz",revision:value.revision,state:value.locationId&&!location?"missing":"loaded",detail:value.locationId&&!location?"Location preset missing":"Venue loaded; outputs unchanged",timestamp:Date.now()}); setConnectionMessage(value.locationId&&!location?"Shared show loaded · venue preset missing":"Shared show loaded · outputs unchanged"); },
       onSharedShowConflict: (value) => {
         const conflict = value as { revision?:number; reason?:string };
-        if (typeof conflict.revision === "number") setSharedShowRevision(conflict.revision);
+        if (typeof conflict.revision === "number") { setSharedShowRevision(conflict.revision); sharedShowRevisionRef.current=conflict.revision; }
         setConnectionMessage("Shared show conflict · LumaRig kept newer revision" + (conflict.revision ? " R" + conflict.revision : ""));
       },
       onSharedShowSnapshot: (value) => {
         const snapshot = value as { revision?:number; show?:{id?:string;name?:string}; patch?:Array<{id:string;name:string;profileId:string;modeId:string;universe:number;address:number;group?:string;transform?:{position?:{x:number;y:number;z:number};rotation?:{yaw:number;pitch:number;roll:number}}}>; library?:Array<{id:string;name:string;savedAt:string;status:string}> };
-        if (typeof snapshot.revision === "number") setSharedShowRevision(snapshot.revision);
+        if (typeof snapshot.revision === "number") { setSharedShowRevision(snapshot.revision); sharedShowRevisionRef.current=snapshot.revision; }
         if (snapshot.show?.name) setSharedShowName(snapshot.show.name);
         if (snapshot.library) setSharedShowLibrary(snapshot.library);
         if (snapshot.patch?.length) setFixtures((current) => snapshot.patch!.map((item) => {
@@ -455,11 +666,22 @@ export default function App() {
           return { id:item.id, name:item.name, kind:profile?.kind ?? existing?.kind ?? "par", position:item.transform?.position ?? existing?.position ?? {x:0,y:2.7,z:1.5}, rotation:item.transform?.rotation ? {x:item.transform.rotation.pitch,y:item.transform.rotation.yaw,z:item.transform.rotation.roll} : existing?.rotation ?? {x:0,y:0,z:0}, patch:{enabled:true,universe:item.universe,address:item.address,profileId:item.profileId,modeId:item.modeId} };
         }));
       },
-      onStageChange: (change) => {
-        // Stage changes from LumaRig are intentionally received separately from
-        // live lighting frames. The Stage Sync policy/revision layer decides
-        // when they mutate the LumaViz world.
-        console.info("LumaRig Stage Sync change", change);
+      onStageChange: (value) => {
+        const change=value as StageChange;
+        if(!change?.id || !change.entityId || typeof change.baseRevision!=="number")return;
+        const conflict=stageChangeConflicts(stageRevisionRef.current,change);
+        if(conflict){
+          setStageChanges(current=>[{...change,status:"conflict" as const},...current.filter(item=>item.id!==change.id)].slice(0,80));
+          setConnectionMessage("Stage Sync conflict · "+change.summary+" · expected R"+stageRevisionRef.current);
+          return;
+        }
+        if(canAutoApplyStageChange(stageSyncModeRef.current,change)){
+          setStageChanges(current=>[{...change,status:"pending" as const},...current.filter(item=>item.id!==change.id)].slice(0,80));
+          applyIncomingStageChange(change);
+          return;
+        }
+        setStageChanges(current=>[{...change,status:"pending" as const},...current.filter(item=>item.id!==change.id)].slice(0,80));
+        setConnectionMessage("Stage Sync · "+change.summary+" awaiting review");
       },
             onFrame: (frame) => {
         setPacketCount((count) => count + 1);
@@ -514,9 +736,13 @@ export default function App() {
       activeView,
       customCameras,
       activeCustomCameraId,
+      displaySurfaces,
+      visualizerMode,
       activeLocationId,
       sharedShowName,
-      sharedShowRevision
+      sharedShowRevision,
+      stageSyncMode,
+      stageRevision
     }));
     setConnectionMessage("Scene saved · "+sharedShowName);
   }
@@ -533,9 +759,13 @@ export default function App() {
       activeView?: ViewPreset;
       customCameras?: CustomCamera[];
       activeCustomCameraId?: string | null;
+      displaySurfaces?: DisplaySurface[];
+      visualizerMode?: "3d" | "2d";
       activeLocationId?: string;
       sharedShowName?: string;
       sharedShowRevision?: number;
+      stageSyncMode?: StageSyncMode;
+      stageRevision?: number;
     };
 
     if (saved.dimensions) setDimensions(saved.dimensions);
@@ -545,9 +775,16 @@ export default function App() {
     if (saved.activeView) setActiveView(saved.activeView);
     if (saved.customCameras) setCustomCameras(saved.customCameras);
     setActiveCustomCameraId(saved.activeCustomCameraId ?? null);
+    if (saved.displaySurfaces) setDisplaySurfaces(saved.displaySurfaces);
+    if (saved.visualizerMode) setVisualizerMode(saved.visualizerMode);
     setActiveLocationId(saved.activeLocationId ?? "");
     if(saved.sharedShowName)setSharedShowName(saved.sharedShowName);
-    if(typeof saved.sharedShowRevision==="number")setSharedShowRevision(saved.sharedShowRevision);
+    if(typeof saved.sharedShowRevision==="number"){ setSharedShowRevision(saved.sharedShowRevision); sharedShowRevisionRef.current=saved.sharedShowRevision; }
+    if(saved.stageSyncMode)setStageSyncMode(saved.stageSyncMode);
+    if(typeof saved.stageRevision==="number"){
+      setStageRevision(saved.stageRevision);
+      stageRevisionRef.current=saved.stageRevision;
+    }
 
     setSelected(null);
     setSceneVersion((value) => value + 1);
@@ -563,9 +800,18 @@ export default function App() {
     setActiveView("foh");
     setCustomCameras([]);
     setActiveCustomCameraId(null);
-    setSelected(null);
+    setDisplaySurfaces([]);
+    setVisualizerMode("3d");
     setActiveLocationId("");
     setSharedShowName("Local Scene");
+    setSharedShowRevision(1);
+    sharedShowRevisionRef.current=1;
+    setStageSyncMode("review");
+    setStageRevision(1);
+    stageRevisionRef.current=1;
+    setStageChanges([]);
+    cameraSnapshotRef.current=null;
+    setSelected(null);
     setSceneVersion((value) => value + 1);
     setConnectionMessage("New local scene · outputs unchanged");
   }
@@ -585,7 +831,12 @@ export default function App() {
   }
 
   function updateBuildObject(id: string, update: (object: SceneObject) => SceneObject) {
-    setObjects((current) => current.map((object) => object.id === id ? update(object) : object));
+    setObjects((current) => current.map((object) => {
+      if(object.id!==id)return object;
+      const next=update(object);
+      sceneRef.current?.updateSceneObject(next);
+      return next;
+    }));
   }
 
   function deleteBuildObject(id: string) {
@@ -598,17 +849,30 @@ export default function App() {
   }
 
   function updateFixture(id: string, update: (fixture: FixtureDefinition) => FixtureDefinition) {
-    setFixtures((current) => current.map((fixture) => {
-      if (fixture.id !== id) return fixture;
-      const next = update(fixture);
-      const revision = sharedShowRevision + 1;
-      setSharedShowRevision(revision);
-      directRef.current?.sendPatchUpdate({
-        type: "shared-show.patch.update", revision, source: "lumaviz", showId: sharedShowName,
-        fixture: { id: next.id, name: next.name, profileId: next.patch.profileId, modeId: next.patch.modeId ?? "", universe: next.patch.universe, address: next.patch.address, group: (next as FixtureDefinition & {group?:string}).group, position: next.position, rotation: next.rotation }
-      });
-      return next;
-    }));
+    const currentFixture=fixturesRef.current.find(fixture=>fixture.id===id);
+    if(!currentFixture)return;
+    const next=update(currentFixture);
+    const nextFixtures=fixturesRef.current.map(fixture=>fixture.id===id?next:fixture);
+    fixturesRef.current=nextFixtures;
+    setFixtures(nextFixtures);
+    if(selected?.id===id){
+      setSelected(current=>current ? {
+        ...current,
+        ...next,
+        position:{...next.position},
+        rotation:{...next.rotation},
+        patch:{...next.patch}
+      } : current);
+    }
+    if(currentFixture.kind!==next.kind)setSceneVersion(version=>version+1);
+
+    const revision=sharedShowRevisionRef.current+1;
+    sharedShowRevisionRef.current=revision;
+    setSharedShowRevision(revision);
+    directRef.current?.sendPatchUpdate({
+      type:"shared-show.patch.update",revision,source:"lumaviz",showId:sharedShowName,
+      fixture:{id:next.id,name:next.name,profileId:next.patch.profileId,modeId:next.patch.modeId??"",universe:next.patch.universe,address:next.patch.address,group:next.group,position:next.position,rotation:next.rotation}
+    });
   }
 
   function deleteFixture(id: string) {
@@ -682,7 +946,9 @@ export default function App() {
 
   const sourceLabel = source === "lumarig"
     ? "LumaRig Direct"
-    : source === "artnet"
+    : source === "vizbridge"
+      ? "VizBridge"
+      : source === "artnet"
       ? "Art-Net"
       : source === "sacn"
         ? "sACN"
@@ -778,7 +1044,8 @@ export default function App() {
       {page === "build" && (
         <section className="workspace">
           <aside className="scene-panel">
-            <PanelHeading title="STAGE / VENUE" /><div className="venue-sidebar"><label>VENUE</label><select value={activeLocationId} onChange={e=>loadLocation(e.target.value)}><option value="">Custom / Current Scene</option>{LOCATION_PRESETS.map(location=><option key={location.id} value={location.id}>{location.name}{location.estimated?" · estimated":""}</option>)}</select><small>{activeLocationId?"Shared venue preset loaded":"Custom venue state"}</small></div>
+            <PanelHeading title="STAGE / VENUE" />
+            <div className="venue-sidebar"><label>VENUE</label><select value={activeLocationId} onChange={e=>loadLocation(e.target.value)}><option value="">Custom / Current Scene</option>{LOCATION_PRESETS.map(location=><option key={location.id} value={location.id}>{location.name}{location.estimated?" · estimated":""}</option>)}</select><small>{activeLocationId?"Shared venue preset loaded":"Custom venue state"}</small></div>
             <div className="fixture-commandbar"><button onClick={() => sceneRef.current?.selectAllFixtures()}>ALL</button><button onClick={duplicateSelected}>DUP</button><button onClick={() => arraySelected(4)}>ARRAY ×4</button><button className={snapEnabled ? "active" : ""} onClick={() => setSnapEnabled(v => !v)}>SNAP</button><input type="number" min="0.01" step="0.05" value={snapStep} onChange={e=>setSnapStep(Math.max(.01,Number(e.target.value)||.25))}/></div>
             <div className="tree">
               <TreeStatic icon="▱" label="Venue / Room" />
@@ -792,7 +1059,7 @@ export default function App() {
                   <button
                     key={object.id}
                     className={"tree-row fixture-row " + (selectedObjectId === object.id ? "selected" : "")}
-                    onClick={() => setSelectedObjectId(object.id)}
+                    onClick={() => { setSelectedObjectId(object.id); sceneRef.current?.selectSceneObject(object.id); }}
                   >
                     <span>{object.kind === "truss" ? "⌗" : object.kind === "platform" ? "▰" : "◫"}</span>
                     <span>{object.name}</span>
@@ -837,6 +1104,10 @@ export default function App() {
                     <option value="truss">Truss</option>
                     <option value="platform">Platform / Riser</option>
                     <option value="box">Scenic Box / Object</option>
+                    <option value="display">Display / Projection Surface</option>
+                    <option value="speaker">Speaker</option>
+                    <option value="pulpit">Pulpit / Lectern</option>
+                    <option value="scenery">Scenery</option>
                   </select>
                 </section>
 
@@ -925,12 +1196,17 @@ export default function App() {
             <button className="primary-button" onClick={addFixture}>＋ ADD FIXTURE</button>
           </div>
 
+          {(patchReport.conflicts.length>0 || patchReport.outOfRange.length>0) && <div className="patch-warning">
+            <strong>PATCH NEEDS ATTENTION</strong>
+            <span>{patchReport.conflicts.length ? `${patchReport.conflicts.length} overlap${patchReport.conflicts.length===1?"":"s"}` : ""}{patchReport.conflicts.length&&patchReport.outOfRange.length?" · ":""}{patchReport.outOfRange.length ? `${patchReport.outOfRange.length} fixture${patchReport.outOfRange.length===1?"":"s"} exceed channel 512` : ""}</span>
+          </div>}
+
           <div className="patch-table">
             <div className="patch-row patch-head">
-              <span>Fixture</span><span>Profile</span><span>Universe</span><span>Address</span><span>Enabled</span><span />
+              <span>Fixture</span><span>Profile</span><span>Mode</span><span>Universe</span><span>Address</span><span>Footprint</span><span>Enabled</span><span />
             </div>
             {fixtures.map((fixture) => (
-              <div className="patch-row" key={fixture.id}>
+              <div className={"patch-row " + (patchReport.conflicts.some(conflict=>conflict.fixtures.some(item=>item.id===fixture.id)) || patchReport.outOfRange.some(span=>span.fixtureId===fixture.id) ? "patch-conflict" : "")} key={fixture.id}>
                 <input
                   value={fixture.name}
                   onChange={(event) => updateFixture(fixture.id, (current) => ({ ...current, name: event.target.value }))}
@@ -949,6 +1225,12 @@ export default function App() {
                   {FIXTURE_PROFILES.map((profile) => (
                     <option key={profile.id} value={profile.id}>{profile.name}</option>
                   ))}
+                </select>
+                <select
+                  value={fixture.patch.modeId ?? FIXTURE_PROFILES.find(profile=>profile.id===fixture.patch.profileId)?.modes[0]?.id ?? ""}
+                  onChange={(event)=>updateFixture(fixture.id,current=>({...current,patch:{...current.patch,modeId:event.target.value}}))}
+                >
+                  {FIXTURE_PROFILES.find(profile=>profile.id===fixture.patch.profileId)?.modes.map(mode=><option key={mode.id} value={mode.id}>{mode.name}</option>)}
                 </select>
                 <input
                   type="number"
@@ -970,6 +1252,7 @@ export default function App() {
                     patch: { ...current.patch, address: Math.max(1, Math.min(512, Number(event.target.value) || 1)) }
                   }))}
                 />
+                <span className="patch-footprint-readout">{(() => { const span=patchReport.spans.find(item=>item.fixtureId===fixture.id); return span ? `${span.start}–${span.end}` : "—"; })()}</span>
                 <label className="switch-label">
                   <input
                     type="checkbox"
@@ -995,7 +1278,7 @@ export default function App() {
               {(["fixtures","groups","scene","views"] as const).map((tab) => <button key={tab} className={browserTab === tab ? "active" : ""} onClick={() => setBrowserTab(tab)}>{tab.toUpperCase()}</button>)}
             </div>
             <div className="tree">
-              {browserTab === "scene" && <><TreeStatic icon="▱" label="Room" /><TreeStatic icon="▰" label="Stage" />{objects.map((object) => <TreeStatic key={object.id} icon="⌗" label={object.name} />)}</>}
+              {browserTab === "scene" && <><TreeStatic icon="▱" label="Room" /><TreeStatic icon="▰" label="Stage" />{objects.map((object) => <button key={object.id} className={"tree-row " + (selectedObjectId===object.id ? "selected" : "")} onClick={()=>{setSelectedObjectId(object.id);sceneRef.current?.selectSceneObject(object.id);}}><span>{object.kind==="display"?"▣":"⌗"}</span><span>{object.name}</span></button>)}</>}
               {browserTab === "views" && CAMERA_VIEWS.map((view) => <button key={view.id} className={"tree-row " + (activeView === view.id ? "selected" : "")} onClick={() => setView(view.id)}><span>◉</span><span>{view.label}</span></button>)}
               {browserTab === "groups" && [...new Set(fixtures.map((fixture) => fixture.group).filter(Boolean))].map((group) => <div key={group} className="tree-section"><div className="tree-label"><span>⌄</span>{group}</div>{fixtures.filter((fixture) => fixture.group === group).map((fixture) => <button key={fixture.id} className={"tree-row fixture-row " + (selected?.id === fixture.id ? "selected" : "")} onClick={() => selectFixture(fixture.id)}><span className={"fixture-icon " + fixture.kind}/><span>{fixture.name}</span></button>)}</div>)}
               {browserTab === "fixtures" && <div className="tree-section">
@@ -1070,7 +1353,7 @@ export default function App() {
                 {inspectorTab === "properties" && <section className="inspector-section">
                   <h3>FIXTURE PROFILE</h3>
                   <input className="fixture-search" placeholder="Search manufacturer or model…" value={fixtureSearch} onChange={e=>setFixtureSearch(e.target.value)} />
-                  <label className="gdtf-import">IMPORT GDTF/XML<input type="file" accept=".gdtf,.xml" onChange={e=>e.target.files?.[0] && void importFixtureFile(e.target.files[0])}/></label>
+                  <label className="gdtf-import">IMPORT GDTF / XML<input type="file" accept=".gdtf,.xml" onChange={e=>e.target.files?.[0] && void importFixtureFile(e.target.files[0])}/></label>
                   <select value={selected.patch.profileId} onChange={(event) => {
                     const profile = FIXTURE_PROFILES.find((item) => item.id === event.target.value);
                     updateFixture(selected.id, (current) => ({ ...current, kind: profile?.kind ?? current.kind, patch: { ...current.patch, profileId: event.target.value, modeId: profile?.modes[0]?.id } }));
@@ -1078,9 +1361,20 @@ export default function App() {
                     {FIXTURE_PROFILES.filter(profile => !fixtureSearch || (profile.manufacturer+" "+profile.model).toLowerCase().includes(fixtureSearch.toLowerCase())).map((profile) => <option key={profile.id} value={profile.id}>{profile.manufacturer} · {profile.model}</option>)}
                   </select>
                   <h3>DMX MODE</h3>
-                  <select value={selected.patch.modeId ?? FIXTURE_PROFILES.find((profile) => profile.id === selected.patch.profileId)?.modes[0]?.id ?? ""} onChange={(event) => updateFixture(selected.id, (current) => ({ ...current, patch: { ...current.patch, modeId: event.target.value } }))}>
-                    {FIXTURE_PROFILES.find((profile) => profile.id === selected.patch.profileId)?.modes.map((mode) => <option key={mode.id} value={mode.id}>{mode.name} · {mode.channelCount}ch</option>)}
+                  <select value={selected.patch.modeId ?? selectedProfile?.modes[0]?.id ?? ""} onChange={(event) => updateFixture(selected.id, (current) => ({ ...current, patch: { ...current.patch, modeId: event.target.value } }))}>
+                    {selectedProfile?.modes.map((mode) => <option key={mode.id} value={mode.id}>{mode.name} · {mode.channelCount}ch</option>)}
                   </select>
+                  {selectedProfile && <div className="fixture-profile-summary">
+                    <div className="profile-summary-head"><span className={selectedProfile.verified?"verified":"unverified"}>{selectedProfile.verified?"VERIFIED / IMPORTED":"VERIFY MANUAL"}</span><strong>{selectedProfile.manufacturer} · {selectedProfile.model}</strong></div>
+                    <small>{selectedProfile.note}</small>
+                    <dl>
+                      <div><dt>Footprint</dt><dd>{selectedMode?.channelCount ?? 0} ch{selectedPatchSpan ? ` · ${selectedPatchSpan.start}–${selectedPatchSpan.end}` : ""}</dd></div>
+                      {selectedProfile.movement&&<div><dt>Movement</dt><dd>{selectedProfile.movement.panRangeDegrees}° pan · {selectedProfile.movement.tiltRangeDegrees}° tilt</dd></div>}
+                      {selectedProfile.optics&&<div><dt>Beam</dt><dd>{selectedProfile.optics.beamAngleMinDegrees}–{selectedProfile.optics.beamAngleMaxDegrees}°</dd></div>}
+                    </dl>
+                    <div className="capability-chips">{[...new Set(selectedMode?.channels.flatMap(channel=>channel.parameter?[channel.parameter]:[]) ?? [])].map(capability=><span key={capability}>{capability}</span>)}</div>
+                    {selectedPatchConflict&&<div className="selected-patch-warning">PATCH CONFLICT / OUT OF RANGE</div>}
+                  </div>}
                 </section>}
                 {inspectorTab === "properties" && <section className="inspector-section">
                   <h3>POSITION</h3>
@@ -1218,6 +1512,26 @@ export default function App() {
             </div>
           </div>
 
+          <section className="stage-sync-card">
+            <div className="stage-sync-head">
+              <div><span>STAGE SYNC</span><strong>{stageSyncMode.toUpperCase()}</strong><small>Revision {stageRevision} · {pendingStageChanges.length} pending</small></div>
+              <div className="stage-sync-modes">
+                {(["locked","review","live"] as StageSyncMode[]).map(mode=><button key={mode} className={stageSyncMode===mode?"active":""} onClick={()=>setStageSyncMode(mode)}>{mode.toUpperCase()}</button>)}
+              </div>
+            </div>
+            <p>{stageSyncMode==="locked"?"Incoming stage edits are held for review and never auto-apply.":stageSyncMode==="review"?"Incoming changes are queued so the operator approves them before the world changes.":"Safe fixture/scenery transforms auto-apply. Patch, profile and calibration changes still require review."}</p>
+            <div className="stage-sync-list">
+              {pendingStageChanges.slice(0,6).map(change=><article key={change.id} className={change.status==="conflict"?"conflict":""}>
+                <div><span>{change.category.toUpperCase()}</span><strong>{change.summary}</strong><small>{change.source.toUpperCase()} · base R{change.baseRevision}{change.status==="conflict"?" · REVISION CONFLICT":""}</small></div>
+                <div className="stage-sync-actions">
+                  <button disabled={change.status==="conflict"||!stageChangeSupported(change)} onClick={()=>applyIncomingStageChange(change,true)}>APPROVE</button>
+                  <button onClick={()=>rejectStageChange(change.id)}>REJECT</button>
+                </div>
+              </article>)}
+              {!pendingStageChanges.length&&<div className="stage-sync-empty">No incoming stage changes are waiting.</div>}
+            </div>
+          </section>
+
           <div className="connection-grid">
             <ConnectionCard
               title="VizBridge"
@@ -1270,7 +1584,31 @@ export default function App() {
         </section>
       )}
 
-      {page === "screens" && <section className="library-page"><header className="section-heading"><div><span>DISPLAY SURFACES</span><h2>SCREEN ROUTING</h2><small>LumaStudio {studioMediaState} · {studioFrame ? `Output ${studioFrame.outputId} · ${studioFrame.positionSeconds.toFixed(1)}s` : "waiting for media"}</small></div><button onClick={()=>setDisplaySurfaces(current=>[...current,{id:crypto.randomUUID(),name:`Display ${current.length+1}`,sceneObjectId:objects.find(o=>/screen|display|tv/i.test(o.name))?.id,sourceOutputId:"program-1",fit:"fit",brightness:1,flipX:false,flipY:false,rotation:0,latencyMs:0}])}>+ DISPLAY</button></header><div className="shared-library-grid">{displaySurfaces.map(surface=><article key={surface.id}><strong>{surface.name}</strong><label>SCREEN OBJECT<select value={surface.sceneObjectId??""} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,sceneObjectId:e.target.value}:x))}><option value="">Choose screen</option>{objects.filter(o=>/screen|display|tv/i.test(o.name)).map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label><label>SOURCE<select value={surface.sourceOutputId} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,sourceOutputId:e.target.value}:x))}><option value="program-1">LumaStudio · Program 1</option></select></label><label>FIT<select value={surface.fit} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,fit:e.target.value as DisplaySurface["fit"]}:x))}><option value="fit">Fit</option><option value="fill">Fill</option><option value="stretch">Stretch</option></select></label><label>BRIGHTNESS<input type="range" min="0" max="2" step=".05" value={surface.brightness} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,brightness:Number(e.target.value)}:x))}/></label><label>LATENCY <input type="number" value={surface.latencyMs} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,latencyMs:Number(e.target.value)}:x))}/> ms</label></article>)}</div></section>}
+      {page === "screens" && <section className="library-page">
+        <header className="section-heading">
+          <div><span>DISPLAY SURFACES</span><h2>SCREEN ROUTING</h2><small>LumaStudio {studioMediaState} · {studioFrame ? `Output ${studioFrame.outputId} · ${studioFrame.positionSeconds.toFixed(1)}s` : "waiting for media"}</small></div>
+          <button onClick={()=>setDisplaySurfaces(current=>[...current,{id:crypto.randomUUID(),name:`Display ${current.length+1}`,sceneObjectId:objects.find(o=>o.kind==="display")?.id,sourceOutputId:"program-1",fit:"fit",brightness:1,flipX:false,flipY:false,rotation:0,latencyMs:0}])}>+ DISPLAY</button>
+        </header>
+        <div className="shared-library-grid screen-routing-grid">
+          {displaySurfaces.map(surface=>{
+            const media=displayMedia.get(surface.id);
+            return <article key={surface.id} className="screen-route-card">
+              <div className="screen-route-head"><div><span>{media?.url?"LIVE MEDIA":media?.supported===false?"SOURCE LIMITED":"READY"}</span><strong>{surface.name}</strong><small>{media?.label ?? "Waiting for Studio"}</small></div><button className="danger-button" onClick={()=>setDisplaySurfaces(all=>all.filter(item=>item.id!==surface.id))}>REMOVE</button></div>
+              <label>SCREEN OBJECT<select value={surface.sceneObjectId??""} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,sceneObjectId:e.target.value||undefined}:x))}><option value="">Choose screen</option>{objects.filter(o=>o.kind==="display").map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
+              <label>SOURCE<select value={surface.sourceOutputId} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,sourceOutputId:e.target.value}:x))}><option value="program-1">LumaStudio · Program 1</option></select></label>
+              <label>FIT<select value={surface.fit} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,fit:e.target.value as DisplaySurface["fit"]}:x))}><option value="fit">Fit</option><option value="fill">Fill</option><option value="stretch">Stretch</option></select></label>
+              <label>BRIGHTNESS<input type="range" min="0" max="2" step=".05" value={surface.brightness} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,brightness:Number(e.target.value)}:x))}/></label>
+              <div className="screen-route-options">
+                <label><input type="checkbox" checked={surface.flipX} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,flipX:e.target.checked}:x))}/> FLIP X</label>
+                <label><input type="checkbox" checked={surface.flipY} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,flipY:e.target.checked}:x))}/> FLIP Y</label>
+              </div>
+              <label>ROTATION<input type="number" step="90" value={surface.rotation} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,rotation:Number(e.target.value)}:x))}/></label>
+              <label>LATENCY <input type="number" min="0" value={surface.latencyMs} onChange={e=>setDisplaySurfaces(all=>all.map(x=>x.id===surface.id?{...x,latencyMs:Math.max(0,Number(e.target.value)||0)}:x))}/> ms</label>
+            </article>;
+          })}
+          {!displaySurfaces.length && <div className="empty-state"><strong>No display routes yet</strong><span>Load a venue with semantic display objects, then add a route from LumaStudio Program 1.</span></div>}
+        </div>
+      </section>}
 
       {page === "library" && <section className="library-page"><header className="section-heading"><div><span>SHARED SHOW LIBRARY</span><h2>{sharedShowName}</h2><small>Revision {sharedShowRevision} · synchronized with LumaRig Direct</small></div></header><div className="library-location-summary"><span>VENUE</span><strong>{LOCATION_PRESETS.find(location=>location.id===activeLocationId)?.name??"Custom / Current Scene"}</strong><small>Change venue from STAGE / VENUE so the room remains part of the scene workflow.</small><button onClick={()=>setPage("build")}>OPEN STAGE / VENUE</button></div><div className="shared-library-grid">{sharedShowLibrary.length ? sharedShowLibrary.map((item) => <article key={item.id}><span>{item.status === "template" ? "TEMPLATE" : item.status === "show" ? "SERVICE SHOW" : "DRAFT"}</span><strong>{item.name}</strong><small>{new Date(item.savedAt).toLocaleString()}</small><button onClick={() => { setSharedShowName(item.name); setConnectionMessage(item.name+" selected from Shared Show Library"); }}>LOAD SHOW</button></article>) : <div className="empty-state"><strong>No shared projects received yet</strong><span>Connect LumaRig Direct to receive templates and service shows.</span></div>}</div></section>}
 
@@ -1304,8 +1642,9 @@ export default function App() {
           <div>{fixtures.length} fixtures</div>
           <div>{sharedShowName} · R{sharedShowRevision}{sharedShowLibrary.length ? ` · ${sharedShowLibrary.length} shared shows` : ""}</div>
           <div>{patchedUniverses.length} universe{patchedUniverses.length === 1 ? "" : "s"}</div>
+          <div>SYNC {stageSyncMode.toUpperCase()} · R{stageRevision}{pendingStageChanges.length ? ` · ${pendingStageChanges.length} pending` : ""}</div>
           <div className="status-spacer" />
-          <div>v0.2.0</div>
+          <div>v0.4.0</div>
         </footer>
       )}
     </main>

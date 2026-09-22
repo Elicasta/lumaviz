@@ -706,7 +706,7 @@ select:focus {
 
 .patch-row {
   display: grid;
-  grid-template-columns: minmax(150px, 1.3fr) minmax(220px, 1.7fr) 100px 100px 90px 72px;
+  grid-template-columns: minmax(135px,1.15fr) minmax(180px,1.45fr) minmax(150px,1.25fr) 78px 78px 76px 78px 68px;
   align-items: center;
   gap: 8px;
   min-height: 48px;
@@ -1348,3 +1348,79 @@ body { background:#07090b; }
 .status-dot.connected,.status-dot.healthy { background:var(--luma-green)!important; }
 
 .venue-sidebar{padding:10px;border-bottom:1px solid var(--line,#293136);display:grid;gap:6px}.venue-sidebar label,.library-location-summary span{font-size:9px;letter-spacing:.12em;color:#778187}.venue-sidebar select{width:100%;background:#101518;color:#d7dfe1;border:1px solid #313a3e;padding:8px}.venue-sidebar small,.library-location-summary small{font-size:8px;color:#68747a}.library-location-summary{display:grid;grid-template-columns:auto 1fr auto;gap:6px 12px;align-items:center;padding:12px 14px;border:1px solid #293136;background:#101518;margin-bottom:12px}.library-location-summary strong{font-size:11px}.library-location-summary small{grid-column:2}.library-location-summary button{grid-column:3;grid-row:1/3}
+
+
+/* v0.4 editor safety, screen routing and Stage Sync */
+.patch-warning {
+  max-width:1240px; margin:0 auto 10px; display:flex; align-items:center; gap:12px;
+  padding:10px 12px; border:1px solid #6b4930; background:#21170f; color:#d8b287;
+  font-size:9px;
+}
+.patch-warning strong { color:#ffd8a9; font-size:9px; letter-spacing:.1em; }
+.patch-row.patch-conflict { background:#1d1213; box-shadow:inset 3px 0 #d46c6c; }
+.patch-row.patch-conflict input,.patch-row.patch-conflict select { border-color:#654044; }
+
+.screen-routing-grid { grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); }
+.screen-route-card { align-content:start; }
+.screen-route-card label { display:grid; gap:5px; color:#718397; font-size:8px; font-weight:800; letter-spacing:.07em; }
+.screen-route-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.screen-route-head>div { display:grid; gap:4px; min-width:0; }
+.screen-route-head span { color:#66d88d; font-size:7px; font-weight:900; letter-spacing:.1em; }
+.screen-route-head small { color:#718397; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.screen-route-options { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.screen-route-options label { display:flex; align-items:center; gap:6px; border:1px solid #283643; background:#0a1118; padding:7px; }
+.screen-route-options input { width:auto; }
+
+.stage-sync-card {
+  max-width:1240px; margin:0 auto 16px; padding:12px 14px;
+  border:1px solid #2b3c4e; background:linear-gradient(180deg,#0d151f,#0a1017);
+}
+.stage-sync-head { display:flex; align-items:center; justify-content:space-between; gap:18px; }
+.stage-sync-head>div:first-child { display:grid; grid-template-columns:auto auto; align-items:baseline; gap:2px 10px; }
+.stage-sync-head span { color:#71849a; font-size:8px; font-weight:900; letter-spacing:.12em; }
+.stage-sync-head strong { color:#dbeaf7; font-size:13px; }
+.stage-sync-head small { grid-column:1/3; color:#66798e; font-size:8px; }
+.stage-sync-modes { display:flex; gap:4px; }
+.stage-sync-modes button,.stage-sync-actions button {
+  border:1px solid #304257; background:#0c151f; color:#8094aa; min-height:28px;
+  padding:0 10px; font-size:7px; font-weight:850; letter-spacing:.08em; cursor:pointer;
+}
+.stage-sync-modes button.active { border-color:#3f7855; background:#153023; color:#bff2cf; box-shadow:inset 0 -2px #55e98d; }
+.stage-sync-card>p { color:#748598; font-size:9px; line-height:1.45; }
+.stage-sync-list { display:grid; gap:5px; }
+.stage-sync-list article { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:8px 9px; border:1px solid #263749; background:#09111a; }
+.stage-sync-list article.conflict { border-color:#694248; background:#1b1114; }
+.stage-sync-list article>div:first-child { display:grid; gap:2px; }
+.stage-sync-list article span { color:#71a9d5; font-size:7px; font-weight:900; letter-spacing:.09em; }
+.stage-sync-list article strong { color:#dce8f3; font-size:10px; }
+.stage-sync-list article small { color:#66788a; font-size:8px; }
+.stage-sync-actions { display:flex; gap:4px; flex-shrink:0; }
+.stage-sync-actions button:disabled { opacity:.35; cursor:not-allowed; }
+.stage-sync-actions button:first-child:not(:disabled) { border-color:#315f43; color:#aee8c0; }
+.stage-sync-actions button:last-child { border-color:#5d373d; color:#d998a0; }
+.stage-sync-empty { padding:10px; border:1px dashed #273646; color:#607286; font-size:9px; text-align:center; }
+
+
+.patch-footprint-readout {
+  color:#9baaba; font-size:9px; font-variant-numeric:tabular-nums; text-align:center;
+}
+.fixture-profile-summary {
+  display:grid; gap:7px; margin-top:9px; padding:9px; border:1px solid #29394a; background:#09111a;
+}
+.profile-summary-head { display:grid; gap:4px; }
+.profile-summary-head>span { width:max-content; padding:3px 5px; border:1px solid #5a4330; color:#c6a37e; font-size:7px; font-weight:900; letter-spacing:.08em; }
+.profile-summary-head>span.verified { border-color:#315e43; color:#8bd9a5; background:#0d2116; }
+.profile-summary-head strong { color:#d9e7f4; font-size:10px; }
+.fixture-profile-summary>small { color:#697b8d; font-size:8px; line-height:1.4; }
+.fixture-profile-summary dl { display:grid; gap:3px; margin:0; }
+.fixture-profile-summary dl div { display:flex; justify-content:space-between; gap:10px; font-size:8px; }
+.fixture-profile-summary dt { color:#627487; }
+.fixture-profile-summary dd { margin:0; color:#aebfd0; text-align:right; }
+.capability-chips { display:flex; flex-wrap:wrap; gap:4px; }
+.capability-chips span { padding:3px 5px; border:1px solid #2b4359; background:#0d1a25; color:#7da9ce; font-size:7px; text-transform:uppercase; }
+.selected-patch-warning { padding:6px; border:1px solid #664047; background:#211215; color:#df959e; font-size:7px; font-weight:900; letter-spacing:.08em; text-align:center; }
+
+@media (max-width: 1120px) {
+  .patch-table { overflow-x:auto; }
+  .patch-row { min-width:1050px; }
+}
