@@ -144,7 +144,7 @@ export default function App() {
   const [studioMediaState,setStudioMediaState]=useState<"offline"|"connected">("offline");
   const [displaySurfaces,setDisplaySurfaces]=useState<DisplaySurface[]>([]);
 
-  useEffect(()=>connectStudioMedia("ws://127.0.0.1:9462/media",{onOpen:()=>setStudioMediaState("connected"),onClose:()=>setStudioMediaState("offline"),onFrame:setStudioFrame}),[]);
+  useEffect(()=>{ let stop:(()=>void)|undefined; void connectStudioMedia("local://lumastudio-media",{onOpen:()=>setStudioMediaState("connected"),onClose:()=>setStudioMediaState("offline"),onFrame:setStudioFrame}).then(unlisten=>{stop=unlisten;}); return()=>stop?.(); },[]);
 
   useEffect(() => {
     fixturesRef.current = fixtures;
