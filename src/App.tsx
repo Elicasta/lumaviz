@@ -22,7 +22,7 @@ import type {
 } from "./viz/types";
 import { displayDistance, inputDistance } from "./viz/units";
 
-type PageId = "build" | "patch" | "visualize" | "cameras" | "connect" | "monitor";
+type PageId = "build" | "patch" | "visualize" | "cameras" | "connect" | "library" | "monitor";
 type InputSource = "demo" | "lumarig" | "vizbridge" | "artnet" | "sacn" | "none";
 type ConnectionState = "idle" | "connecting" | "connected" | "error";
 
@@ -32,6 +32,7 @@ const PAGES: Array<{ id: PageId; label: string; description: string }> = [
   { id: "visualize", label: "VISUALIZE", description: "Main 3D environment" },
   { id: "cameras", label: "CAMERAS", description: "Production viewpoints" },
   { id: "connect", label: "CONNECT", description: "LumaRig and network DMX" },
+  { id: "library", label: "LIBRARY", description: "Shared templates and service shows" },
   { id: "monitor", label: "MONITOR", description: "Clean output" }
 ];
 
@@ -1223,6 +1224,8 @@ export default function App() {
           </div>
         </section>
       )}
+
+      {page === "library" && <section className="library-page"><header className="section-heading"><div><span>SHARED SHOW LIBRARY</span><h2>{sharedShowName}</h2><small>Revision {sharedShowRevision} · synchronized with LumaRig Direct</small></div></header><div className="shared-library-grid">{sharedShowLibrary.length ? sharedShowLibrary.map((item) => <article key={item.id}><span>{item.status === "template" ? "TEMPLATE" : item.status === "show" ? "SERVICE SHOW" : "DRAFT"}</span><strong>{item.name}</strong><small>{new Date(item.savedAt).toLocaleString()}</small><button onClick={() => { setSharedShowName(item.name); setPage("patch"); }}>Open / Inspect</button></article>) : <div className="empty-state"><strong>No shared projects received yet</strong><span>Connect LumaRig Direct to receive templates and service shows.</span></div>}</div></section>}
 
       {page === "monitor" && (
         <section className="monitor-page">
