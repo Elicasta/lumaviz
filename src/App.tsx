@@ -115,6 +115,9 @@ export default function App() {
   const [customCameras, setCustomCameras] = useState<CustomCamera[]>([]);
   const [activeCustomCameraId, setActiveCustomCameraId] = useState<string | null>(null);
   const [tool, setTool] = useState<TransformTool>("select");
+  const [visualizerMode, setVisualizerMode] = useState<"3d" | "2d">("3d");
+  const [browserTab, setBrowserTab] = useState<"fixtures" | "groups" | "scene" | "views">("fixtures");
+  const [inspectorTab, setInspectorTab] = useState<"properties" | "dmx" | "live">("properties");
   const [selected, setSelected] = useState<SelectionSnapshot | null>(null);
   const [sceneVersion, setSceneVersion] = useState(1);
   const [source, setSource] = useState<InputSource>("artnet");
@@ -881,11 +884,14 @@ export default function App() {
       {page === "visualize" && (
         <section className="workspace">
           <aside className="scene-panel">
-            <PanelHeading title="SCENE" />
+            <div className="operator-tabs browser-tabs">
+              {(["fixtures","groups","scene","views"] as const).map((tab) => <button key={tab} className={browserTab === tab ? "active" : ""} onClick={() => setBrowserTab(tab)}>{tab.toUpperCase()}</button>)}
+            </div>
             <div className="tree">
-              <TreeStatic icon="▱" label="Room" />
-              <TreeStatic icon="▰" label="Stage" />
-              <div className="tree-section">
+              {browserTab === "scene" && <><TreeStatic icon="▱" label="Room" /><TreeStatic icon="▰" label="Stage" />{objects.map((object) => <TreeStatic key={object.id} icon="⌗" label={object.name} />)}</>}
+              {browserTab === "views" && CAMERA_VIEWS.map((view) => <button key={view.id} className={"tree-row " + (activeView === view.id ? "selected" : "")} onClick={() => setView(view.id)}><span>◉</span><span>{view.label}</span></button>)}
+              {browserTab === "groups" && [...new Set(fixtures.map((fixture) => fixture.group).filter(Boolean))].map((group) => <div key={group} className="tree-section"><div className="tree-label"><span>⌄</span>{group}</div>{fixtures.filter((fixture) => fixture.group === group).map((fixture) => <button key={fixture.id} className={"tree-row fixture-row " + (selected?.id === fixture.id ? "selected" : "")} onClick={() => selectFixture(fixture.id)}><span className={"fixture-icon " + fixture.kind}/><span>{fixture.name}</span></button>)}</div>)}
+              {browserTab === "fixtures" && <div className="tree-section">
                 <div className="tree-label"><span>⌄</span> FIXTURES <small>{fixtures.length}</small></div>
                 {fixtures.map((fixture) => (
                   <button
@@ -897,15 +903,15 @@ export default function App() {
                     <span>{fixture.name}</span>
                   </button>
                 ))}
-              </div>
+              </div>}
             </div>
           </aside>
 
           <div className="visualizer-center">
             <div className="viewport-modebar">
               <div className="mode-tabs">
-                <button className="active">3D VIEW</button>
-                <button disabled>2D PLAN</button>
+                <button className={visualizerMode === "3d" ? "active" : ""} onClick={() => { setVisualizerMode("3d"); sceneRef.current?.setPlanView(false); }}>3D VIEW</button>
+                <button className={visualizerMode === "2d" ? "active" : ""} onClick={() => { setVisualizerMode("2d"); sceneRef.current?.setPlanView(true); }}>2D PLAN</button>
                 <button onClick={() => setPage("build")}>STAGE</button>
                 <button onClick={() => setPage("build")}>MATERIALS</button>
                 <button onClick={() => setPage("cameras")}>SNAPSHOTS</button>
@@ -938,10 +944,13 @@ export default function App() {
           </div>
 
           <aside className="inspector-panel">
-            <PanelHeading title="INSPECTOR" />
+            <div className="operator-tabs inspector-tabs">
+              {(["properties","dmx","live"] as const).map((tab) => <button key={tab} className={inspectorTab === tab ? "active" : ""} onClick={() => setInspectorTab(tab)}>{tab.toUpperCase()}</button>)}
+            </div>
             {selected ? (
               <>
                 <section className="inspector-section selected-card">
+                  <div className="selection-accent" />
                   <div className="eyebrow">FIXTURE</div>
                   <h2>{selected.name}</h2>
                   <div className="fixture-meta">
@@ -951,7 +960,16 @@ export default function App() {
                     <span className="color-chip" style={{ background: selected.color }} />
                   </div>
                 </section>
-                <section className="inspector-section">
+                {inspectorTab === "properties" && <section className="inspector-section">
+                  <h3>FIXTURE PROFILE</h3>
+                  <select value={selected.patch.profileId} onChange={(event) => {
+                    const profile = FIXTURE_PROFILES.find((item) => item.id === event.target.value);
+                    updateFixture(selected.id, (current) => ({ ...current, kind: profile?.kind ?? current.kind, patch: { ...current.patch, profileId: event.target.value } }));
+                  }}>
+                    {FIXTURE_PROFILES.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+                  </select>
+                </section>}
+                {inspectorTab === "properties" && <section className="inspector-section">
                   <h3>POSITION</h3>
                   <div className="three-inputs">
                     {(["x", "y", "z"] as const).map((axis) => (
@@ -964,8 +982,8 @@ export default function App() {
                       </label>
                     ))}
                   </div>
-                </section>
-                <section className="inspector-section">
+                </section>}
+                {inspectorTab === "properties" && <section className="inspector-section">
                   <h3>ROTATION</h3>
                   <div className="three-inputs">
                     {(["x", "y", "z"] as const).map((axis) => (
@@ -978,16 +996,21 @@ export default function App() {
                       </label>
                     ))}
                   </div>
-                </section>
-                <section className="inspector-section data-block">
+                </section>}
+                {inspectorTab === "dmx" && <section className="inspector-section data-block">
+                  <h3>DMX PATCH</h3>
+                  <dl><div><dt>Profile</dt><dd>{FIXTURE_PROFILES.find((profile) => profile.id === selected.patch.profileId)?.name ?? selected.patch.profileId}</dd></div><div><dt>Universe</dt><dd>{selected.patch.universe}</dd></div><div><dt>Address</dt><dd>{selected.patch.address}</dd></div><div><dt>Enabled</dt><dd>{selected.patch.enabled ? "YES" : "NO"}</dd></div></dl>
+                </section>}
+                {inspectorTab === "live" && <section className="inspector-section data-block">
                   <h3>LIVE INPUT</h3>
                   <dl>
                     <div><dt>Pan</dt><dd>{selected.pan.toFixed(1)}°</dd></div>
                     <div><dt>Tilt</dt><dd>{selected.tilt.toFixed(1)}°</dd></div>
                     <div><dt>Beam</dt><dd>{selected.beamAngle.toFixed(1)}°</dd></div>
                     <div><dt>Source</dt><dd>{sourceLabel}</dd></div>
+                    <div><dt>Intensity</dt><dd>{Math.round(selected.intensity * 100)}%</dd></div>
                   </dl>
-                </section>
+                </section>}
               </>
             ) : (
               <section className="inspector-section empty-inspector">
