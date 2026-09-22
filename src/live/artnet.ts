@@ -1,4 +1,4 @@
-import { PROFILE_BY_ID } from "../fixtures/profiles";
+import { PROFILE_BY_ID, decodeFixture, findMode } from "../fixtures/profiles";
 import type {
   DmxUniversePacket,
   FixtureDefinition,
@@ -16,9 +16,11 @@ export function fixtureFrameFromDmxPacket(
     if (!fixture.patch.enabled || fixture.patch.universe !== packet.universe) return [];
     const profile = PROFILE_BY_ID.get(fixture.patch.profileId);
     if (!profile) return [];
+    const mode = findMode(profile.id, fixture.patch.modeId);
+    if (!mode) return [];
     return [{
       id: fixture.id,
-      ...profile.decode(packet.data, fixture.patch.address)
+      ...decodeFixture(profile, mode, packet.data, fixture.patch.address)
     }];
   });
 
