@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { connectVizBridge } from "./live/vizbridge";
 import { FIXTURE_PROFILES } from "./fixtures/profiles";
+import { importGdtfFile } from "./fixtures/gdtf";
 import { fixtureFrameFromDmxPacket } from "./live/artnet";
 import { connectToLumaRig, type LumaRigConnection } from "./live/lumarig";
 import { startArtNetReceiver } from "./live/tauriArtNet";
@@ -119,6 +120,9 @@ export default function App() {
   const [visualizerMode, setVisualizerMode] = useState<"3d" | "2d">("3d");
   const [browserTab, setBrowserTab] = useState<"fixtures" | "groups" | "scene" | "views">("fixtures");
   const [inspectorTab, setInspectorTab] = useState<"properties" | "dmx" | "live">("properties");
+  const [fixtureSearch, setFixtureSearch] = useState("");
+  const [snapEnabled, setSnapEnabled] = useState(true);
+  const [snapStep, setSnapStep] = useState(0.25);
   const [selected, setSelected] = useState<SelectionSnapshot | null>(null);
   const [sceneVersion, setSceneVersion] = useState(1);
   const [source, setSource] = useState<InputSource>("artnet");
@@ -190,6 +194,16 @@ export default function App() {
     sceneRef.current?.setTool(tool);
   }, [tool]);
 
+  useEffect(() => { sceneRef.current?.setSnap(snapEnabled, snapStep); }, [snapEnabled, snapStep]);
+  useEffect(() => {
+    const key=(event:KeyboardEvent)=>{
+      if ((event.metaKey||event.ctrlKey) && event.key.toLowerCase()==="a") { event.preventDefault(); sceneRef.current?.selectAllFixtures(); }
+      if ((event.metaKey||event.ctrlKey) && event.key.toLowerCase()==="d") { event.preventDefault(); duplicateSelected(); }
+      if (event.key==="Escape") sceneRef.current?.clearSelection();
+    };
+    window.addEventListener("keydown",key); return ()=>window.removeEventListener("keydown",key);
+  });
+
   useEffect(() => {
     if (!directRef.current || connectionState !== "connected") return;
     const timer = window.setInterval(() => {
@@ -256,6 +270,27 @@ export default function App() {
 
     directRef.current?.close();
     directRef.current = null;
+  }
+
+  function duplicateSelected() {
+    const ids = new Set(sceneRef.current?.getSelectedFixtureIds() ?? (selected ? [selected.id] : []));
+    if (!ids.size) return;
+    setFixtures((current) => {
+      const copies = current.filter(f => ids.has(f.id)).map((f,index) => ({...f,id:`${f.id}-copy-${Date.now()}-${index}`,name:`${f.name} Copy`,position:{...f.position,x:f.position.x+snapStep},rotation:{...f.rotation},patch:{...f.patch,enabled:false}}));
+      return [...current,...copies];
+    });
+  }
+  function arraySelected(count=4) {
+    const ids = new Set(sceneRef.current?.getSelectedFixtureIds() ?? (selected ? [selected.id] : []));
+    if (!ids.size) return;
+    setFixtures(current => [...current,...current.filter(f=>ids.has(f.id)).flatMap(f=>Array.from({length:Math.max(0,count-1)},(_,i)=>({...f,id:`${f.id}-array-${Date.now()}-${i}`,name:`${f.name} ${i+2}`,position:{...f.position,x:f.position.x+snapStep*(i+1)},rotation:{...f.rotation},patch:{...f.patch,enabled:false}})))]);
+  }
+  async function importFixtureFile(file: File) {
+    try {
+      const profile = await importGdtfFile(file);
+      if (!FIXTURE_PROFILES.some(item => item.id === profile.id)) FIXTURE_PROFILES.push(profile);
+      setFixtureSearch(profile.model);
+    } catch (error) { console.error(error); }
   }
 
   function applyFrame(frame: FixtureFrame) {
@@ -674,6 +709,7 @@ export default function App() {
         <section className="workspace">
           <aside className="scene-panel">
             <PanelHeading title="BUILD" />
+            <div className="fixture-commandbar"><button onClick={() => sceneRef.current?.selectAllFixtures()}>ALL</button><button onClick={duplicateSelected}>DUP</button><button onClick={() => arraySelected(4)}>ARRAY ×4</button><button className={snapEnabled ? "active" : ""} onClick={() => setSnapEnabled(v => !v)}>SNAP</button><input type="number" min="0.01" step="0.05" value={snapStep} onChange={e=>setSnapStep(Math.max(.01,Number(e.target.value)||.25))}/></div>
             <div className="tree">
               <TreeStatic icon="▱" label="Venue / Room" />
               <TreeStatic icon="▰" label="Stage" />
@@ -963,11 +999,13 @@ export default function App() {
                 </section>
                 {inspectorTab === "properties" && <section className="inspector-section">
                   <h3>FIXTURE PROFILE</h3>
+                  <input className="fixture-search" placeholder="Search manufacturer or model…" value={fixtureSearch} onChange={e=>setFixtureSearch(e.target.value)} />
+                  <label className="gdtf-import">IMPORT GDTF/XML<input type="file" accept=".gdtf,.xml" onChange={e=>e.target.files?.[0] && void importFixtureFile(e.target.files[0])}/></label>
                   <select value={selected.patch.profileId} onChange={(event) => {
                     const profile = FIXTURE_PROFILES.find((item) => item.id === event.target.value);
                     updateFixture(selected.id, (current) => ({ ...current, kind: profile?.kind ?? current.kind, patch: { ...current.patch, profileId: event.target.value, modeId: profile?.modes[0]?.id } }));
                   }}>
-                    {FIXTURE_PROFILES.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+                    {FIXTURE_PROFILES.filter(profile => !fixtureSearch || (profile.manufacturer+" "+profile.model).toLowerCase().includes(fixtureSearch.toLowerCase())).map((profile) => <option key={profile.id} value={profile.id}>{profile.manufacturer} · {profile.model}</option>)}
                   </select>
                   <h3>DMX MODE</h3>
                   <select value={selected.patch.modeId ?? FIXTURE_PROFILES.find((profile) => profile.id === selected.patch.profileId)?.modes[0]?.id ?? ""} onChange={(event) => updateFixture(selected.id, (current) => ({ ...current, patch: { ...current.patch, modeId: event.target.value } }))}>
