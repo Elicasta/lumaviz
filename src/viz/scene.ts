@@ -74,6 +74,7 @@ export class LumaVizScene {
   private onSelection?: (value: SelectionSnapshot | null) => void;
   private onFixtureTransform?: (value: FixtureDefinition) => void;
   private onSceneObjectTransform?: (value: SceneObject) => void;
+  private onSceneObjectSelect?: (id: string | null) => void;
   private planRestoreCamera: CustomCamera | null = null;
   private resizeObserver: ResizeObserver;
 
@@ -85,12 +86,14 @@ export class LumaVizScene {
     materialPreset: MaterialPreset,
     onSelection?: (value: SelectionSnapshot | null) => void,
     onFixtureTransform?: (value: FixtureDefinition) => void,
-    onSceneObjectTransform?: (value: SceneObject) => void
+    onSceneObjectTransform?: (value: SceneObject) => void,
+    onSceneObjectSelect?: (id: string | null) => void
   ) {
     this.dimensions = dimensions;
     this.onSelection = onSelection;
     this.onFixtureTransform = onFixtureTransform;
     this.onSceneObjectTransform = onSceneObjectTransform;
+    this.onSceneObjectSelect = onSceneObjectSelect;
 
     this.engine = new Engine(canvas, true, {
       preserveDrawingBuffer: true,
@@ -379,6 +382,7 @@ export class LumaVizScene {
     const runtime = this.sceneObjects.get(id);
     if (!runtime) return;
     this.selectedObjectId = id;
+    this.onSceneObjectSelect?.(id);
     this.selectedIds.clear();
     this.selectedId = null;
     this.onSelection?.(null);
@@ -528,6 +532,7 @@ export class LumaVizScene {
     const runtime = this.fixtures.get(id);
     if (!runtime) return;
     this.selectedObjectId = null;
+    this.onSceneObjectSelect?.(null);
     if (!additive) this.selectedIds.clear();
     if (additive && this.selectedIds.has(id)) this.selectedIds.delete(id);
     else this.selectedIds.add(id);
@@ -559,6 +564,7 @@ export class LumaVizScene {
     this.selectedIds.clear();
     this.selectedId = null;
     this.selectedObjectId = null;
+    this.onSceneObjectSelect?.(null);
     this.gizmos.attachToNode(null);
     this.onSelection?.(null);
   }
