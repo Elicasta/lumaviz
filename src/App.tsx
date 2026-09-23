@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { connectVizBridge } from "./live/vizbridge";
 import { FIXTURE_PROFILES, registerFixtureProfile } from "./fixtures/profiles";
-import { importGdtfFile } from "./fixtures/gdtf";
 import { validatePatch } from "./fixtures/patch-validation";
 import { LOCATION_PRESETS } from "./locations/presets";
 import { connectStudioMedia, type DisplaySurface, type StudioMediaFrame } from "./live/lumastudio";
@@ -444,6 +443,7 @@ export default function App() {
   }
   async function importFixtureFile(file: File) {
     try {
+      const { importGdtfFile } = await import("./fixtures/gdtf");
       const profile = await importGdtfFile(file);
       registerFixtureProfile(profile);
       setFixtureSearch(profile.model);
