@@ -4,7 +4,7 @@ import { connectVizBridge } from "./live/vizbridge";
 import { FIXTURE_PROFILES, registerFixtureProfile } from "./fixtures/profiles";
 import { validatePatch } from "./fixtures/patch-validation";
 import { LOCATION_PRESETS } from "./locations/presets";
-import { connectStudioMedia, type DisplaySurface, type StudioMediaFrame } from "./live/lumastudio";
+import { connectStudioMedia, readDisplaySurfaces, type DisplaySurface, type StudioMediaFrame } from "./live/lumastudio";
 import { fixtureFrameFromDmxPacket } from "./live/artnet";
 import { connectToLumaRig, type LumaRigConnection } from "./live/lumarig";
 import { startArtNetReceiver } from "./live/tauriArtNet";
@@ -83,15 +83,6 @@ function cloneObjects(): SceneObject[] {
     rotation: { ...object.rotation },
     size: { ...object.size }
   }));
-}
-
-function loadDisplaySurfaces(): DisplaySurface[] {
-  try {
-    const raw=localStorage.getItem("lumaviz.display-surfaces");
-    if(!raw)return [];
-    const parsed=JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch { return []; }
 }
 
 function resolveStudioMediaSource(frame: StudioMediaFrame | null, outputId: string): { url?: string; label: string; supported: boolean } {
@@ -185,11 +176,11 @@ export default function App() {
   const pendingStageChanges=stageChanges.filter(change=>change.status==="pending"||change.status==="conflict");
   const [studioFrame,setStudioFrame]=useState<StudioMediaFrame|null>(null);
   const [studioMediaState,setStudioMediaState]=useState<"offline"|"connected">("offline");
-  const [displaySurfaces,setDisplaySurfaces]=useState<DisplaySurface[]>(loadDisplaySurfaces);
+  const [displaySurfaces,setDisplaySurfaces]=useState<DisplaySurface[]>(() => readDisplaySurfaces(localStorage));
 
   useEffect(()=>{ let stop:(()=>void)|undefined; void connectStudioMedia("local://lumastudio-media",{onOpen:()=>setStudioMediaState("connected"),onClose:()=>setStudioMediaState("offline"),onFrame:setStudioFrame}).then(unlisten=>{stop=unlisten;}); return()=>stop?.(); },[]);
 
-  useEffect(()=>{ localStorage.setItem("lumaviz.display-surfaces",JSON.stringify(displaySurfaces)); },[displaySurfaces]);
+  useEffect(()=>{ try { localStorage.setItem("lumaviz.display-surfaces",JSON.stringify(displaySurfaces)); } catch { /* Routing can still run for this session if storage is unavailable. */ } },[displaySurfaces]);
   useEffect(()=>{ sharedShowRevisionRef.current=sharedShowRevision; },[sharedShowRevision]);
   useEffect(()=>{ stageSyncModeRef.current=stageSyncMode; },[stageSyncMode]);
   useEffect(()=>{ stageRevisionRef.current=stageRevision; },[stageRevision]);
