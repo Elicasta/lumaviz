@@ -19,7 +19,7 @@ export function fixtureFrameFromDmxPacket(
     const mode = findMode(profile.id, fixture.patch.modeId);
     if (!mode) return [];
     return [{
-      id: fixture.id,
+      id: fixture.id, name: fixture.name, universe: fixture.patch.universe, address: fixture.patch.address,
       ...decodeFixture(profile, mode, packet.data, fixture.patch.address)
     }];
   });

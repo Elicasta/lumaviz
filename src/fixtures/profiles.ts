@@ -51,7 +51,7 @@ export function decodeFixture(profile:FixtureProfile,mode:FixtureMode,data:numbe
  const pan=mode.channels.some(c=>c.parameter==="pan")?(panRaw/65535)*(profile.movement?.panRangeDegrees??540)-(profile.movement?.panRangeDegrees??540)/2:undefined;
  const tilt=mode.channels.some(c=>c.parameter==="tilt")?(tiltRaw/65535)*(profile.movement?.tiltRangeDegrees??270)-(profile.movement?.tiltRangeDegrees??270)/2:undefined;
  const zoom=value(mode,data,address,"zoom")/255;
- const min=profile.optics?.beamAngleMinDegrees??18,max=profile.optics?.beamAngleMaxDegrees??profile.optics?.defaultBeamAngleDegrees??28;
- const beamAngle=mode.channels.some(c=>c.parameter==="zoom")?min+(max-min)*zoom:(profile.optics?.defaultBeamAngleDegrees??28);
+ const optics=profile.optics;
+ const beamAngle=optics ? (has("zoom") ? optics.beamAngleMinDegrees + (optics.beamAngleMaxDegrees-optics.beamAngleMinDegrees)*zoom : optics.defaultBeamAngleDegrees) : undefined;
  return {intensity,color:`#${hx(r)}${hx(g)}${hx(b)}`,emitters:{red:r/255,green:g/255,blue:b/255,white:w/255,amber:a/255,uv:uv/255},pan,tilt,beamAngle,strobeHz:value(mode,data,address,"strobe")/255*20,profileId:profile.id,modeId:mode.id,manufacturer:profile.manufacturer,model:profile.model,capabilities:mode.channels.flatMap(c=>c.parameter?[c.parameter]:[])};
 }

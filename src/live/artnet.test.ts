@@ -53,6 +53,7 @@ it('uses the same RGBW, no-dimmer and 16-bit meanings as the Rig semantic stream
   data[49]=64;data[50]=32;data[51]=16;data[52]=200;data[53]=70;data[54]=30;
   data[99]=128;data[100]=255;data[101]=64;data[102]=127;data[106]=128;data[107]=200;
   const [hex,mover]=fixtureFrameFromDmxPacket({universe:2,sequence:1,physical:0,source:'loopback',data},[noDim,moving],'artnet').fixtures;
+  expect(hex.universe).toBe(2); expect(hex.address).toBe(50);
   expect(hex.intensity).toBe(1);
   expect(hex.color).toBe('#402010');
   expect(hex.emitters?.white).toBeCloseTo(70/255);
