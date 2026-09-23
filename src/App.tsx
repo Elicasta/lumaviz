@@ -6,6 +6,7 @@ import { validatePatch } from "./fixtures/patch-validation";
 import { LOCATION_PRESETS } from "./locations/presets";
 import { connectStudioMedia, readDisplaySurfaces, type DisplaySurface, type StudioMediaFrame } from "./live/lumastudio";
 import { fixtureFrameFromDmxPacket } from "./live/artnet";
+import { DmxSequenceGate } from "./live/dmx-sequence";
 import { connectToLumaRig, type LumaRigConnection } from "./live/lumarig";
 import { startArtNetReceiver } from "./live/tauriArtNet";
 import { startSacnReceiver } from "./live/tauriSacn";
@@ -134,6 +135,7 @@ export default function App() {
   const cleanupRef = useRef<null | (() => void | Promise<void>)>(null);
   const directRef = useRef<LumaRigConnection | null>(null);
   const lastFrameRef = useRef<FixtureFrame | null>(null);
+  const dmxSequenceGateRef = useRef(new DmxSequenceGate());
   const cameraSnapshotRef = useRef<CustomCamera | null>(null);
 
   const [page, setPage] = useState<PageId>("visualize");
@@ -439,6 +441,7 @@ export default function App() {
 
     directRef.current?.close();
     directRef.current = null;
+    dmxSequenceGateRef.current.reset();
   }
 
   function loadLocation(locationId:string) {
@@ -514,6 +517,7 @@ export default function App() {
         setConnectionMessage(message);
       },
       onPacket: (packet) => {
+        if (!dmxSequenceGateRef.current.accept("artnet", packet.source, packet.universe, packet.sequence)) return;
         setPacketCount((count) => count + 1);
         setLastPacketSource("VizBridge · " + packet.source);
         const frame = fixtureFrameFromDmxPacket(packet, fixturesRef.current, "artnet");
@@ -532,6 +536,7 @@ export default function App() {
 
     const cleanup = await startArtNetReceiver(
       (packet) => {
+        if (!dmxSequenceGateRef.current.accept("artnet", packet.source, packet.universe, packet.sequence)) return;
         const frame = fixtureFrameFromDmxPacket(packet, fixturesRef.current, "artnet");
         setPacketCount((count) => count + 1);
         setMatchedFixtureCount(frame.fixtures.length);
@@ -571,6 +576,7 @@ export default function App() {
     const cleanup = await startSacnReceiver(
       patchedUniverses.length ? patchedUniverses : [1],
       (packet) => {
+        if (!dmxSequenceGateRef.current.accept("sacn", packet.source, packet.universe, packet.sequence)) return;
         setConnectionState("connected");
         setConnectionMessage("Receiving sACN · Universe " + packet.universe);
         setLastPacketSource(packet.source);
