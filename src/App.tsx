@@ -515,11 +515,11 @@ export default function App() {
       },
       (status) => {
         if (status === "listening") {
-          setConnectionState("connected");
-          setConnectionMessage("AUTO LINK READY · UDP 6454 · waiting for LumaRig");
+          setConnectionState("connecting");
+          setConnectionMessage("ART-NET LISTENING · UDP 6454 · no packets received");
         } else if (status === "lumarig-handshake") {
-          setConnectionState("connected");
-          setConnectionMessage("LUMARIG ACKNOWLEDGED · UDP 6454");
+          setConnectionState("connecting");
+          setConnectionMessage("LUMARIG DISCOVERED · UDP 6454 · waiting for DMX packets");
         } else if (status === "stopped") {
           setConnectionState((current) => current === "error" ? current : "idle");
           setConnectionMessage((current) => current.includes("Could not bind") ? current : "Art-Net listener stopped");
