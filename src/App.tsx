@@ -156,6 +156,25 @@ export default function App() {
   const [snapStep, setSnapStep] = useState(0.25);
   const [selected, setSelected] = useState<SelectionSnapshot | null>(null);
   const [sceneVersion, setSceneVersion] = useState(1);
+  const [rendererRevision, setRendererRevision] = useState(0);
+  const rendererSettingsRef = useRef({
+    tool,
+    snapEnabled,
+    snapStep,
+    visualizerMode,
+    activeView,
+    customCameras,
+    activeCustomCameraId
+  });
+  rendererSettingsRef.current = {
+    tool,
+    snapEnabled,
+    snapStep,
+    visualizerMode,
+    activeView,
+    customCameras,
+    activeCustomCameraId
+  };
   const [source, setSource] = useState<InputSource>("artnet");
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
   const [connectionMessage, setConnectionMessage] = useState("Starting automatic LumaRig link · UDP 6454");
@@ -267,20 +286,22 @@ export default function App() {
 
       viz = instance;
       sceneRef.current = instance;
+      const latest = rendererSettingsRef.current;
       if (resetCameraOnRebuild.current) { cameraSnapshotRef.current = null; resetCameraOnRebuild.current = false; }
-      instance.setTool(tool);
-      instance.setSnap(snapEnabled, snapStep);
-      if (visualizerMode === "2d") {
+      instance.setTool(latest.tool);
+      instance.setSnap(latest.snapEnabled, latest.snapStep);
+      if (latest.visualizerMode === "2d") {
         if (cameraSnapshotRef.current) instance.restoreCamera(cameraSnapshotRef.current);
         instance.setPlanView(true);
       } else if (cameraSnapshotRef.current) {
         instance.restoreCamera(cameraSnapshotRef.current);
       } else {
-        const activeCustomCamera = customCameras.find((camera) => camera.id === activeCustomCameraId);
+        const activeCustomCamera = latest.customCameras.find((camera) => camera.id === latest.activeCustomCameraId);
         if (activeCustomCamera) instance.applyCustomCamera(activeCustomCamera);
-        else instance.setView(activeView);
+        else instance.setView(latest.activeView);
       }
       if (lastFrameRef.current) instance.applyFrame(lastFrameRef.current);
+      setRendererRevision((revision) => revision + 1);
     };
 
     void startRenderer().catch((error) => {
@@ -406,7 +427,7 @@ export default function App() {
       else apply();
     }
     return()=>timers.forEach(timer=>window.clearTimeout(timer));
-  },[displaySurfaces,displayMedia,page,sceneVersion]);
+  },[displaySurfaces,displayMedia,page,sceneVersion,rendererRevision]);
 
   async function cleanupConnection() {
     const cleanup = cleanupRef.current;
