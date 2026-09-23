@@ -16,7 +16,6 @@ import {
   VideoTexture,
   Texture
 } from "@babylonjs/core";
-import "@babylonjs/loaders";
 import { getCameraPose } from "./cameraPresets";
 import { createSceneMaterials } from "./materials";
 import type {
