@@ -471,8 +471,8 @@ export default function App() {
     setConnectionMessage("Connecting to VizBridge · ws://127.0.0.1:9461/dmx");
     const cleanup = connectVizBridge("ws://127.0.0.1:9461/dmx", {
       onOpen: () => {
-        setConnectionState("connected");
-        setConnectionMessage("VizBridge connected · waiting for Art-Net");
+        setConnectionState("connecting");
+        setConnectionMessage("VizBridge socket open · waiting for Art-Net data");
       },
       onClose: () => {
         setConnectionState("idle");
@@ -658,8 +658,8 @@ export default function App() {
 
     const connection = connectToLumaRig(lumaRigUrl, {
       onOpen: () => {
-        setConnectionState("connected");
-        setConnectionMessage("LumaRig Direct connected");
+        setConnectionState("connecting");
+        setConnectionMessage("LumaRig Direct socket open · waiting for valid data");
         setLastPacketSource(lumaRigUrl);
       },
       onSharedShowActivation: (value) => { if (!isSharedShowActivation(value)) return; setSharedShowRevision(value.revision); sharedShowRevisionRef.current=value.revision; setSharedShowName(value.showId); const location=value.locationId?LOCATION_PRESETS.find(item=>item.id===value.locationId):undefined; if (value.locationId&&location) loadLocation(value.locationId); connection.sendSharedShowAck({type:"shared-show.ack",protocol:"shared-show-v1",showId:value.showId,app:"lumaviz",revision:value.revision,state:value.locationId&&!location?"missing":"loaded",detail:value.locationId&&!location?"Location preset missing":"Venue loaded; outputs unchanged",timestamp:Date.now()}); setConnectionMessage(value.locationId&&!location?"Shared show loaded · venue preset missing":"Shared show loaded · outputs unchanged"); },
