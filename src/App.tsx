@@ -197,7 +197,7 @@ export default function App() {
   const [studioMediaState,setStudioMediaState]=useState<"offline"|"connected">("offline");
   const [displaySurfaces,setDisplaySurfaces]=useState<DisplaySurface[]>(() => readDisplaySurfaces(localStorage));
 
-  useEffect(()=>{ let stop:(()=>void)|undefined; void connectStudioMedia("local://lumastudio-media",{onOpen:()=>setStudioMediaState("connected"),onClose:()=>setStudioMediaState("offline"),onFrame:setStudioFrame}).then(unlisten=>{stop=unlisten;}); return()=>stop?.(); },[]);
+  useEffect(()=>{ let cancelled=false; let stop:(()=>void)|undefined; void connectStudioMedia("local://lumastudio-media",{onOpen:()=>setStudioMediaState("connected"),onClose:()=>setStudioMediaState("offline"),onFrame:setStudioFrame,onError:()=>setStudioMediaState("offline")}).then(unlisten=>{ if(cancelled) unlisten(); else stop=unlisten; }); return()=>{ cancelled=true; stop?.(); }; },[]);
 
   useEffect(()=>{ try { localStorage.setItem("lumaviz.display-surfaces",JSON.stringify(displaySurfaces)); } catch { /* Routing can still run for this session if storage is unavailable. */ } },[displaySurfaces]);
   useEffect(()=>{ sharedShowRevisionRef.current=sharedShowRevision; },[sharedShowRevision]);
