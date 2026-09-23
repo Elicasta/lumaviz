@@ -1,21 +1,18 @@
-import {
-  ArcRotateCamera,
-  Camera,
-  Color3,
-  Color4,
-  Engine,
-  GizmoManager,
-  HemisphericLight,
-  Mesh,
-  MeshBuilder,
-  PBRMaterial,
-  Scene,
-  SpotLight,
-  TransformNode,
-  Vector3,
-  VideoTexture,
-  Texture
-} from "@babylonjs/core";
+import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { GizmoManager } from "@babylonjs/core/Gizmos/gizmoManager";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { VideoTexture } from "@babylonjs/core/Materials/Textures/videoTexture";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { Scene } from "@babylonjs/core/scene";
 import { getCameraPose } from "./cameraPresets";
 import { createSceneMaterials } from "./materials";
 import type {
