@@ -10,6 +10,7 @@ import { fixtureFrameFromDmxPacket } from "./live/artnet";
 import { connectToLumaRig, type LumaRigConnection } from "./live/lumarig";
 import { startArtNetReceiver } from "./live/tauriArtNet";
 import { startSacnReceiver } from "./live/tauriSacn";
+import { parseSceneFile } from "./viz/scene-file";
 import { DEFAULT_DIMENSIONS, DEFAULT_FIXTURES, DEFAULT_OBJECTS } from "./viz/defaults";
 import { LumaVizScene } from "./viz/scene";
 import type {
@@ -198,6 +199,8 @@ export default function App() {
     fixturesRef.current = fixtures;
   }, [fixtures]);
 
+  const sceneTopology = JSON.stringify([fixtures.map(item => [item.id, item.kind]), objects.map(item => [item.id, item.kind])]);
+  const resetCameraOnRebuild = useRef(false);
   useEffect(() => {
     if (!isViewportPage(page) || !canvasRef.current) return;
 
@@ -249,7 +252,7 @@ export default function App() {
             entityKind:"object",
             category:"scenery",
             source:"lumaviz",
-            baseRevision:sceneVersion,
+            baseRevision:stageRevisionRef.current,
             createdAt:new Date().toISOString(),
             summary:transformedObject.name+" position / rotation",
             before:null,
@@ -265,7 +268,9 @@ export default function App() {
     );
 
     sceneRef.current = viz;
+    if (resetCameraOnRebuild.current) { cameraSnapshotRef.current = null; resetCameraOnRebuild.current = false; }
     viz.setTool(tool);
+    viz.setSnap(snapEnabled, snapStep);
     if (visualizerMode === "2d") {
       if (cameraSnapshotRef.current) viz.restoreCamera(cameraSnapshotRef.current);
       viz.setPlanView(true);
@@ -279,11 +284,18 @@ export default function App() {
     if (lastFrameRef.current) viz.applyFrame(lastFrameRef.current);
 
     return () => {
-      cameraSnapshotRef.current = viz.cameraSnapshot();
+      if (!resetCameraOnRebuild.current) cameraSnapshotRef.current = viz.cameraSnapshot();
       if (sceneRef.current === viz) sceneRef.current = null;
       viz.dispose();
     };
-  }, [page, dimensions, objects, material, sceneVersion]);
+  }, [page, dimensions, sceneTopology, material, sceneVersion]);
+
+  // Transform edits update existing meshes. They must not dispose the camera,
+  // engine, textures or pointer interaction on every scenery change.
+  useEffect(() => {
+    for (const object of objects) sceneRef.current?.updateSceneObject(object);
+    for (const fixture of fixtures) sceneRef.current?.updateFixtureTransform(fixture.id, fixture.position, fixture.rotation);
+  }, [objects, fixtures, page, sceneVersion]);
 
   useEffect(() => {
     sceneRef.current?.setView(activeView);
@@ -296,6 +308,7 @@ export default function App() {
   useEffect(() => { sceneRef.current?.setSnap(snapEnabled, snapStep); }, [snapEnabled, snapStep]);
   useEffect(() => {
     const key=(event:KeyboardEvent)=>{
+      if (event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName))) return;
       if ((event.metaKey||event.ctrlKey) && event.key.toLowerCase()==="a") { event.preventDefault(); sceneRef.current?.selectAllFixtures(); }
       if ((event.metaKey||event.ctrlKey) && event.key.toLowerCase()==="d") { event.preventDefault(); duplicateSelected(); }
       if (event.key==="Escape") sceneRef.current?.clearSelection();
@@ -660,7 +673,7 @@ export default function App() {
         if (typeof snapshot.revision === "number") { setSharedShowRevision(snapshot.revision); sharedShowRevisionRef.current=snapshot.revision; }
         if (snapshot.show?.name) setSharedShowName(snapshot.show.name);
         if (snapshot.library) setSharedShowLibrary(snapshot.library);
-        if (snapshot.patch?.length) setFixtures((current) => snapshot.patch!.map((item) => {
+        if (Array.isArray(snapshot.patch)) setFixtures((current) => snapshot.patch!.map((item) => {
           const existing = current.find((fixture) => fixture.id === item.id);
           const profile = FIXTURE_PROFILES.find((candidate) => candidate.id === item.profileId);
           return { id:item.id, name:item.name, kind:profile?.kind ?? existing?.kind ?? "par", position:item.transform?.position ?? existing?.position ?? {x:0,y:2.7,z:1.5}, rotation:item.transform?.rotation ? {x:item.transform.rotation.pitch,y:item.transform.rotation.yaw,z:item.transform.rotation.roll} : existing?.rotation ?? {x:0,y:0,z:0}, patch:{enabled:true,universe:item.universe,address:item.address,profileId:item.profileId,modeId:item.modeId} };
@@ -751,47 +764,38 @@ export default function App() {
     const raw = localStorage.getItem("lumaviz.scene");
     if (!raw) return;
 
-    const saved = JSON.parse(raw) as {
-      dimensions?: SceneDimensions;
-      fixtures?: FixtureDefinition[];
-      objects?: SceneObject[];
-      material?: MaterialPreset;
-      activeView?: ViewPreset;
-      customCameras?: CustomCamera[];
-      activeCustomCameraId?: string | null;
-      displaySurfaces?: DisplaySurface[];
-      visualizerMode?: "3d" | "2d";
-      activeLocationId?: string;
-      sharedShowName?: string;
-      sharedShowRevision?: number;
-      stageSyncMode?: StageSyncMode;
-      stageRevision?: number;
-    };
-
-    if (saved.dimensions) setDimensions(saved.dimensions);
-    if (saved.fixtures) setFixtures(saved.fixtures);
-    if (saved.objects) setObjects(saved.objects);
-    if (saved.material) setMaterial(saved.material);
-    if (saved.activeView) setActiveView(saved.activeView);
-    if (saved.customCameras) setCustomCameras(saved.customCameras);
+    try {
+    const saved = parseSceneFile(raw);
+    resetCameraOnRebuild.current = true;
+    lastFrameRef.current = null;
+    setSelectedObjectId(null);
+    setStageChanges([]);
+    setDimensions(saved.dimensions ?? { ...DEFAULT_DIMENSIONS });
+    setFixtures(saved.fixtures ?? []);
+    setObjects(saved.objects ?? []);
+    setMaterial(saved.material ?? "production-dark");
+    setActiveView(saved.activeView ?? "foh");
+    setCustomCameras(saved.customCameras ?? []);
     setActiveCustomCameraId(saved.activeCustomCameraId ?? null);
-    if (saved.displaySurfaces) setDisplaySurfaces(saved.displaySurfaces);
-    if (saved.visualizerMode) setVisualizerMode(saved.visualizerMode);
+    setDisplaySurfaces(saved.displaySurfaces ?? []);
+    setVisualizerMode(saved.visualizerMode ?? "3d");
     setActiveLocationId(saved.activeLocationId ?? "");
-    if(saved.sharedShowName)setSharedShowName(saved.sharedShowName);
-    if(typeof saved.sharedShowRevision==="number"){ setSharedShowRevision(saved.sharedShowRevision); sharedShowRevisionRef.current=saved.sharedShowRevision; }
-    if(saved.stageSyncMode)setStageSyncMode(saved.stageSyncMode);
-    if(typeof saved.stageRevision==="number"){
-      setStageRevision(saved.stageRevision);
-      stageRevisionRef.current=saved.stageRevision;
-    }
+    setSharedShowName(saved.sharedShowName);
+    setSharedShowRevision(saved.sharedShowRevision);
+    sharedShowRevisionRef.current = saved.sharedShowRevision;
+    setStageSyncMode(saved.stageSyncMode);
+    setStageRevision(saved.stageRevision);
+    stageRevisionRef.current = saved.stageRevision;
 
     setSelected(null);
     setSceneVersion((value) => value + 1);
-    setConnectionMessage("Saved scene opened · outputs unchanged");
+    setConnectionMessage("Saved scene replaced current scene · outputs unchanged");
+    } catch (error) { setConnectionMessage(`Scene could not be opened: ${String(error)}`); }
   }
 
   function resetScene() {
+    resetCameraOnRebuild.current = true;
+    lastFrameRef.current = null;
     setDimensions({ ...DEFAULT_DIMENSIONS });
     setFixtures(cloneFixtures());
     setObjects(cloneObjects());
