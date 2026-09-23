@@ -11,7 +11,7 @@ import { startArtNetReceiver } from "./live/tauriArtNet";
 import { startSacnReceiver } from "./live/tauriSacn";
 import { parseSceneFile } from "./viz/scene-file";
 import { DEFAULT_DIMENSIONS, DEFAULT_FIXTURES, DEFAULT_OBJECTS } from "./viz/defaults";
-import { LumaVizScene } from "./viz/scene";
+import type { LumaVizScene } from "./viz/scene";
 import type {
   CustomCamera,
   FixtureDefinition,
@@ -203,8 +203,16 @@ export default function App() {
   useEffect(() => {
     if (!isViewportPage(page) || !canvasRef.current) return;
 
-    const viz = new LumaVizScene(
-      canvasRef.current,
+    const canvas = canvasRef.current;
+    let disposed = false;
+    let viz: LumaVizScene | null = null;
+
+    const startRenderer = async () => {
+      const { LumaVizScene } = await import("./viz/scene");
+      if (disposed || canvasRef.current !== canvas) return;
+
+      viz = new LumaVizScene(
+      canvas,
       dimensions,
       fixtures,
       objects,
@@ -266,23 +274,34 @@ export default function App() {
       setSelectedObjectId
     );
 
-    sceneRef.current = viz;
-    if (resetCameraOnRebuild.current) { cameraSnapshotRef.current = null; resetCameraOnRebuild.current = false; }
-    viz.setTool(tool);
-    viz.setSnap(snapEnabled, snapStep);
-    if (visualizerMode === "2d") {
+      sceneRef.current = viz;
+      if (resetCameraOnRebuild.current) { cameraSnapshotRef.current = null; resetCameraOnRebuild.current = false; }
+      viz.setTool(tool);
+      viz.setSnap(snapEnabled, snapStep);
+      if (visualizerMode === "2d") {
       if (cameraSnapshotRef.current) viz.restoreCamera(cameraSnapshotRef.current);
       viz.setPlanView(true);
-    } else if (cameraSnapshotRef.current) {
+      } else if (cameraSnapshotRef.current) {
       viz.restoreCamera(cameraSnapshotRef.current);
-    } else {
+      } else {
       const activeCustomCamera = customCameras.find((camera) => camera.id === activeCustomCameraId);
       if (activeCustomCamera) viz.applyCustomCamera(activeCustomCamera);
       else viz.setView(activeView);
     }
-    if (lastFrameRef.current) viz.applyFrame(lastFrameRef.current);
+      if (lastFrameRef.current) viz.applyFrame(lastFrameRef.current);
+
+    };
+
+    void startRenderer().catch((error) => {
+      if (!disposed) {
+        console.error("LumaViz renderer failed to start", error);
+        setConnectionMessage("3D renderer failed to start · restart LumaViz");
+      }
+    });
 
     return () => {
+      disposed = true;
+      if (!viz) return;
       if (!resetCameraOnRebuild.current) cameraSnapshotRef.current = viz.cameraSnapshot();
       if (sceneRef.current === viz) sceneRef.current = null;
       viz.dispose();
