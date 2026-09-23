@@ -24,6 +24,11 @@ struct ListenerState {
     running: Mutex<Option<Arc<AtomicBool>>>,
 }
 
+#[derive(Default)]
+struct MediaListenerState {
+    started: AtomicBool,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DmxPacket {
@@ -306,7 +311,14 @@ fn stop_sacn_listener(state: State<'_, ListenerState>) -> Result<(), String> {
 
 
 #[tauri::command]
-fn start_lumastudio_media_listener(app: AppHandle) -> Result<(), String> {
+fn start_lumastudio_media_listener(
+    app: AppHandle,
+    state: State<'_, MediaListenerState>,
+) -> Result<(), String> {
+    if state.started.swap(true, Ordering::AcqRel) {
+        return Ok(());
+    }
+
     std::thread::spawn(move || {
         loop {
             match TcpStream::connect("127.0.0.1:9462") {
@@ -339,6 +351,7 @@ fn start_lumastudio_media_listener(app: AppHandle) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .manage(ListenerState::default())
+        .manage(MediaListenerState::default())
         .invoke_handler(tauri::generate_handler![
             start_artnet_listener,
             stop_artnet_listener,
