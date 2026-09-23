@@ -211,8 +211,8 @@ export default function App() {
       const { LumaVizScene } = await import("./viz/scene");
       if (disposed || canvasRef.current !== canvas) return;
 
-      viz = new LumaVizScene(
-      canvas,
+      const instance = new LumaVizScene(
+        canvas,
       dimensions,
       fixtures,
       objects,
@@ -274,22 +274,22 @@ export default function App() {
       setSelectedObjectId
     );
 
-      sceneRef.current = viz;
+      viz = instance;
+      sceneRef.current = instance;
       if (resetCameraOnRebuild.current) { cameraSnapshotRef.current = null; resetCameraOnRebuild.current = false; }
-      viz.setTool(tool);
-      viz.setSnap(snapEnabled, snapStep);
+      instance.setTool(tool);
+      instance.setSnap(snapEnabled, snapStep);
       if (visualizerMode === "2d") {
-      if (cameraSnapshotRef.current) viz.restoreCamera(cameraSnapshotRef.current);
-      viz.setPlanView(true);
+        if (cameraSnapshotRef.current) instance.restoreCamera(cameraSnapshotRef.current);
+        instance.setPlanView(true);
       } else if (cameraSnapshotRef.current) {
-      viz.restoreCamera(cameraSnapshotRef.current);
+        instance.restoreCamera(cameraSnapshotRef.current);
       } else {
-      const activeCustomCamera = customCameras.find((camera) => camera.id === activeCustomCameraId);
-      if (activeCustomCamera) viz.applyCustomCamera(activeCustomCamera);
-      else viz.setView(activeView);
-    }
-      if (lastFrameRef.current) viz.applyFrame(lastFrameRef.current);
-
+        const activeCustomCamera = customCameras.find((camera) => camera.id === activeCustomCameraId);
+        if (activeCustomCamera) instance.applyCustomCamera(activeCustomCamera);
+        else instance.setView(activeView);
+      }
+      if (lastFrameRef.current) instance.applyFrame(lastFrameRef.current);
     };
 
     void startRenderer().catch((error) => {
