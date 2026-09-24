@@ -1,0 +1,164 @@
+/* LUMA operator foundation v2. Keep tokens aligned across the ecosystem. */
+:root {
+  color-scheme: dark;
+  --luma-canvas: #0b1117;
+  --luma-chrome: #101820;
+  --luma-panel: #141e27;
+  --luma-raised: #1b2731;
+  --luma-raised-strong: #22323e;
+  --luma-line: #30414d;
+  --luma-line-strong: #455d6b;
+  --luma-text: #e4edf3;
+  --luma-muted: #9aadb9;
+  --luma-dim: #70828f;
+  --luma-focus: #9dc6ea;
+  --luma-live: #78dda9;
+  --luma-preview: #8fb9e3;
+  --luma-cued: #d9b878;
+  --luma-danger: #eda0a5;
+  --luma-radius: 6px;
+}
+
+body { background: var(--luma-canvas); }
+:is(.app-shell, .app) { color: var(--luma-text); }
+:is(.app-shell, .app) :is(button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--luma-focus);
+  outline-offset: 2px;
+}
+:is(.app-shell, .app) :is(input, select, textarea) { font-variant-numeric: tabular-nums; }
+:is(.app-shell, .app) button:disabled { cursor: not-allowed; }
+:is(.app-shell, .app) button {
+  transition: border-color 100ms ease, background-color 100ms ease, color 100ms ease;
+}
+:is(.app-shell, .app) * { scrollbar-color: var(--luma-line-strong) var(--luma-chrome); }
+@media (prefers-reduced-motion: reduce) {
+  :is(.app-shell, .app) button { transition: none; }
+}
+
+/* Viz: viewport first, editor chrome second, selected state always readable. */
+.app-shell {
+  grid-template-rows: 36px 60px minmax(0, 1fr) 30px;
+  background: var(--luma-canvas);
+}
+.app-shell .menu-bar,
+.app-shell .command-bar,
+.app-shell .status-bar {
+  border-color: var(--luma-line);
+  background: var(--luma-chrome);
+}
+.app-shell .brand {
+  color: var(--luma-text);
+  font-weight: 650;
+  letter-spacing: .07em;
+}
+.app-shell .app-menu button {
+  border-radius: 4px;
+  color: var(--luma-muted);
+  font-size: 11px;
+}
+.app-shell .app-menu button:hover { color: var(--luma-text); background: var(--luma-raised); }
+.app-shell .command-group button,
+.app-shell .unit-switch {
+  border-color: var(--luma-line);
+  border-radius: 5px;
+  background: var(--luma-raised);
+  color: var(--luma-muted);
+}
+.app-shell .command-group button:hover,
+.app-shell .command-group button.active,
+.app-shell .unit-switch:hover {
+  color: var(--luma-text);
+  border-color: var(--luma-line-strong);
+  background: var(--luma-raised-strong);
+}
+.app-shell .command-group button.active { box-shadow: inset 0 -2px var(--luma-focus); }
+.app-shell .camera-tabs button {
+  min-height: 34px;
+  border-color: var(--luma-line);
+  border-radius: 4px;
+  background: var(--luma-panel);
+  color: var(--luma-muted);
+  font-size: 11px;
+}
+.app-shell .camera-tabs button:hover { border-color: var(--luma-line-strong); color: var(--luma-text); }
+.app-shell .camera-tabs button.active {
+  color: var(--luma-text);
+  border-color: var(--luma-line-strong);
+  background: var(--luma-raised-strong);
+  box-shadow: inset 0 -2px var(--luma-focus);
+}
+.app-shell .scene-panel,
+.app-shell .inspector-panel {
+  border-color: var(--luma-line);
+  background: var(--luma-panel);
+}
+.app-shell .panel-heading {
+  min-height: 40px;
+  border-color: var(--luma-line);
+  background: var(--luma-chrome);
+  color: var(--luma-muted);
+  font-size: 11px;
+  letter-spacing: .08em;
+}
+.app-shell .tree-row {
+  min-height: 36px;
+  border-radius: 4px;
+}
+.app-shell .tree-row:hover { background: var(--luma-raised); }
+.app-shell .tree-row.selected {
+  color: var(--luma-text);
+  background: var(--luma-raised-strong);
+  box-shadow: inset 3px 0 var(--luma-focus);
+}
+.app-shell .tree-label { font-size: 12px; }
+.app-shell .tree-label small {
+  color: var(--luma-muted);
+  font-size: 10px;
+}
+.app-shell .inspector-section {
+  border-color: var(--luma-line);
+  padding-top: 18px;
+  padding-bottom: 18px;
+}
+.app-shell .inspector-section h2 {
+  color: var(--luma-muted);
+  font-size: 11px;
+  letter-spacing: .08em;
+}
+.app-shell :is(.three-inputs input, .dimension-grid input, .inspector-panel input, .inspector-panel select) {
+  border-color: var(--luma-line);
+  border-radius: 4px;
+  background: var(--luma-chrome);
+  color: var(--luma-text);
+}
+.app-shell .viewport-wrap {
+  border-color: var(--luma-line);
+  background: #060a0e;
+}
+.app-shell .viewport-badge {
+  border-color: var(--luma-line-strong);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--luma-chrome) 94%, transparent);
+}
+.app-shell .viewport-badge small,
+.app-shell .connection-pill {
+  color: var(--luma-muted);
+  font-size: 11px;
+}
+.app-shell .status-bar {
+  color: var(--luma-muted);
+  font-size: 10px;
+}
+.app-shell .status-dot.ready {
+  background: var(--luma-live);
+  box-shadow: none;
+}
+.app-shell .status-dot.demo {
+  background: var(--luma-cued);
+  box-shadow: none;
+}
+.app-shell .add-object {
+  border-color: var(--luma-line-strong);
+  border-radius: 5px;
+  background: var(--luma-raised-strong);
+}

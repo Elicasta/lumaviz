@@ -2,16 +2,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { connectVizBridge } from "./live/vizbridge";
 import { FIXTURE_PROFILES, registerFixtureProfile } from "./fixtures/profiles";
-import { importGdtfFile } from "./fixtures/gdtf";
 import { validatePatch } from "./fixtures/patch-validation";
 import { LOCATION_PRESETS } from "./locations/presets";
-import { connectStudioMedia, type DisplaySurface, type StudioMediaFrame } from "./live/lumastudio";
+import { connectStudioMedia, readDisplaySurfaces, type DisplaySurface, type StudioMediaFrame } from "./live/lumastudio";
 import { fixtureFrameFromDmxPacket } from "./live/artnet";
+import { DmxSequenceGate } from "./live/dmx-sequence";
 import { connectToLumaRig, type LumaRigConnection } from "./live/lumarig";
 import { startArtNetReceiver } from "./live/tauriArtNet";
 import { startSacnReceiver } from "./live/tauriSacn";
+import { parseSceneFile } from "./viz/scene-file";
 import { DEFAULT_DIMENSIONS, DEFAULT_FIXTURES, DEFAULT_OBJECTS } from "./viz/defaults";
-import { LumaVizScene } from "./viz/scene";
+import type { LumaVizScene } from "./viz/scene";
 import type {
   CustomCamera,
   FixtureDefinition,
@@ -85,15 +86,6 @@ function cloneObjects(): SceneObject[] {
   }));
 }
 
-function loadDisplaySurfaces(): DisplaySurface[] {
-  try {
-    const raw=localStorage.getItem("lumaviz.display-surfaces");
-    if(!raw)return [];
-    const parsed=JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch { return []; }
-}
-
 function resolveStudioMediaSource(frame: StudioMediaFrame | null, outputId: string): { url?: string; label: string; supported: boolean } {
   if(!frame || frame.outputId!==outputId) return { label:"Waiting for Studio output", supported:true };
   if(frame.program?.state==="black") return { label:"Program black", supported:true };
@@ -143,6 +135,7 @@ export default function App() {
   const cleanupRef = useRef<null | (() => void | Promise<void>)>(null);
   const directRef = useRef<LumaRigConnection | null>(null);
   const lastFrameRef = useRef<FixtureFrame | null>(null);
+  const dmxSequenceGateRef = useRef(new DmxSequenceGate());
   const cameraSnapshotRef = useRef<CustomCamera | null>(null);
 
   const [page, setPage] = useState<PageId>("visualize");
@@ -165,6 +158,25 @@ export default function App() {
   const [snapStep, setSnapStep] = useState(0.25);
   const [selected, setSelected] = useState<SelectionSnapshot | null>(null);
   const [sceneVersion, setSceneVersion] = useState(1);
+  const [rendererRevision, setRendererRevision] = useState(0);
+  const rendererSettingsRef = useRef({
+    tool,
+    snapEnabled,
+    snapStep,
+    visualizerMode,
+    activeView,
+    customCameras,
+    activeCustomCameraId
+  });
+  rendererSettingsRef.current = {
+    tool,
+    snapEnabled,
+    snapStep,
+    visualizerMode,
+    activeView,
+    customCameras,
+    activeCustomCameraId
+  };
   const [source, setSource] = useState<InputSource>("artnet");
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
   const [connectionMessage, setConnectionMessage] = useState("Starting automatic LumaRig link · UDP 6454");
@@ -185,11 +197,11 @@ export default function App() {
   const pendingStageChanges=stageChanges.filter(change=>change.status==="pending"||change.status==="conflict");
   const [studioFrame,setStudioFrame]=useState<StudioMediaFrame|null>(null);
   const [studioMediaState,setStudioMediaState]=useState<"offline"|"connected">("offline");
-  const [displaySurfaces,setDisplaySurfaces]=useState<DisplaySurface[]>(loadDisplaySurfaces);
+  const [displaySurfaces,setDisplaySurfaces]=useState<DisplaySurface[]>(() => readDisplaySurfaces(localStorage));
 
-  useEffect(()=>{ let stop:(()=>void)|undefined; void connectStudioMedia("local://lumastudio-media",{onOpen:()=>setStudioMediaState("connected"),onClose:()=>setStudioMediaState("offline"),onFrame:setStudioFrame}).then(unlisten=>{stop=unlisten;}); return()=>stop?.(); },[]);
+  useEffect(()=>{ let cancelled=false; let stop:(()=>void)|undefined; void connectStudioMedia("local://lumastudio-media",{onOpen:()=>setStudioMediaState("connected"),onClose:()=>setStudioMediaState("offline"),onFrame:setStudioFrame,onError:()=>setStudioMediaState("offline")}).then(unlisten=>{ if(cancelled) unlisten(); else stop=unlisten; }); return()=>{ cancelled=true; stop?.(); }; },[]);
 
-  useEffect(()=>{ localStorage.setItem("lumaviz.display-surfaces",JSON.stringify(displaySurfaces)); },[displaySurfaces]);
+  useEffect(()=>{ try { localStorage.setItem("lumaviz.display-surfaces",JSON.stringify(displaySurfaces)); } catch { /* Routing can still run for this session if storage is unavailable. */ } },[displaySurfaces]);
   useEffect(()=>{ sharedShowRevisionRef.current=sharedShowRevision; },[sharedShowRevision]);
   useEffect(()=>{ stageSyncModeRef.current=stageSyncMode; },[stageSyncMode]);
   useEffect(()=>{ stageRevisionRef.current=stageRevision; },[stageRevision]);
@@ -198,11 +210,21 @@ export default function App() {
     fixturesRef.current = fixtures;
   }, [fixtures]);
 
+  const sceneTopology = JSON.stringify([fixtures.map(item => [item.id, item.kind]), objects.map(item => [item.id, item.kind])]);
+  const resetCameraOnRebuild = useRef(false);
   useEffect(() => {
     if (!isViewportPage(page) || !canvasRef.current) return;
 
-    const viz = new LumaVizScene(
-      canvasRef.current,
+    const canvas = canvasRef.current;
+    let disposed = false;
+    let viz: LumaVizScene | null = null;
+
+    const startRenderer = async () => {
+      const { LumaVizScene } = await import("./viz/scene");
+      if (disposed || canvasRef.current !== canvas) return;
+
+      const instance = new LumaVizScene(
+        canvas,
       dimensions,
       fixtures,
       objects,
@@ -249,7 +271,7 @@ export default function App() {
             entityKind:"object",
             category:"scenery",
             source:"lumaviz",
-            baseRevision:sceneVersion,
+            baseRevision:stageRevisionRef.current,
             createdAt:new Date().toISOString(),
             summary:transformedObject.name+" position / rotation",
             before:null,
@@ -264,26 +286,48 @@ export default function App() {
       setSelectedObjectId
     );
 
-    sceneRef.current = viz;
-    viz.setTool(tool);
-    if (visualizerMode === "2d") {
-      if (cameraSnapshotRef.current) viz.restoreCamera(cameraSnapshotRef.current);
-      viz.setPlanView(true);
-    } else if (cameraSnapshotRef.current) {
-      viz.restoreCamera(cameraSnapshotRef.current);
-    } else {
-      const activeCustomCamera = customCameras.find((camera) => camera.id === activeCustomCameraId);
-      if (activeCustomCamera) viz.applyCustomCamera(activeCustomCamera);
-      else viz.setView(activeView);
-    }
-    if (lastFrameRef.current) viz.applyFrame(lastFrameRef.current);
+      viz = instance;
+      sceneRef.current = instance;
+      const latest = rendererSettingsRef.current;
+      if (resetCameraOnRebuild.current) { cameraSnapshotRef.current = null; resetCameraOnRebuild.current = false; }
+      instance.setTool(latest.tool);
+      instance.setSnap(latest.snapEnabled, latest.snapStep);
+      if (latest.visualizerMode === "2d") {
+        if (cameraSnapshotRef.current) instance.restoreCamera(cameraSnapshotRef.current);
+        instance.setPlanView(true);
+      } else if (cameraSnapshotRef.current) {
+        instance.restoreCamera(cameraSnapshotRef.current);
+      } else {
+        const activeCustomCamera = latest.customCameras.find((camera) => camera.id === latest.activeCustomCameraId);
+        if (activeCustomCamera) instance.applyCustomCamera(activeCustomCamera);
+        else instance.setView(latest.activeView);
+      }
+      if (lastFrameRef.current) instance.applyFrame(lastFrameRef.current);
+      setRendererRevision((revision) => revision + 1);
+    };
+
+    void startRenderer().catch((error) => {
+      if (!disposed) {
+        console.error("LumaViz renderer failed to start", error);
+        setConnectionMessage("3D renderer failed to start · restart LumaViz");
+      }
+    });
 
     return () => {
-      cameraSnapshotRef.current = viz.cameraSnapshot();
+      disposed = true;
+      if (!viz) return;
+      if (!resetCameraOnRebuild.current) cameraSnapshotRef.current = viz.cameraSnapshot();
       if (sceneRef.current === viz) sceneRef.current = null;
       viz.dispose();
     };
-  }, [page, dimensions, objects, material, sceneVersion]);
+  }, [page, dimensions, sceneTopology, material, sceneVersion]);
+
+  // Transform edits update existing meshes. They must not dispose the camera,
+  // engine, textures or pointer interaction on every scenery change.
+  useEffect(() => {
+    for (const object of objects) sceneRef.current?.updateSceneObject(object);
+    for (const fixture of fixtures) sceneRef.current?.updateFixtureTransform(fixture.id, fixture.position, fixture.rotation);
+  }, [objects, fixtures, page, sceneVersion]);
 
   useEffect(() => {
     sceneRef.current?.setView(activeView);
@@ -296,6 +340,7 @@ export default function App() {
   useEffect(() => { sceneRef.current?.setSnap(snapEnabled, snapStep); }, [snapEnabled, snapStep]);
   useEffect(() => {
     const key=(event:KeyboardEvent)=>{
+      if (event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName))) return;
       if ((event.metaKey||event.ctrlKey) && event.key.toLowerCase()==="a") { event.preventDefault(); sceneRef.current?.selectAllFixtures(); }
       if ((event.metaKey||event.ctrlKey) && event.key.toLowerCase()==="d") { event.preventDefault(); duplicateSelected(); }
       if (event.key==="Escape") sceneRef.current?.clearSelection();
@@ -384,7 +429,7 @@ export default function App() {
       else apply();
     }
     return()=>timers.forEach(timer=>window.clearTimeout(timer));
-  },[displaySurfaces,displayMedia,page,sceneVersion]);
+  },[displaySurfaces,displayMedia,page,sceneVersion,rendererRevision]);
 
   async function cleanupConnection() {
     const cleanup = cleanupRef.current;
@@ -396,6 +441,7 @@ export default function App() {
 
     directRef.current?.close();
     directRef.current = null;
+    dmxSequenceGateRef.current.reset();
   }
 
   function loadLocation(locationId:string) {
@@ -431,6 +477,7 @@ export default function App() {
   }
   async function importFixtureFile(file: File) {
     try {
+      const { importGdtfFile } = await import("./fixtures/gdtf");
       const profile = await importGdtfFile(file);
       registerFixtureProfile(profile);
       setFixtureSearch(profile.model);
@@ -458,8 +505,8 @@ export default function App() {
     setConnectionMessage("Connecting to VizBridge · ws://127.0.0.1:9461/dmx");
     const cleanup = connectVizBridge("ws://127.0.0.1:9461/dmx", {
       onOpen: () => {
-        setConnectionState("connected");
-        setConnectionMessage("VizBridge connected · waiting for Art-Net");
+        setConnectionState("connecting");
+        setConnectionMessage("VizBridge socket open · waiting for Art-Net data");
       },
       onClose: () => {
         setConnectionState("idle");
@@ -470,6 +517,7 @@ export default function App() {
         setConnectionMessage(message);
       },
       onPacket: (packet) => {
+        if (!dmxSequenceGateRef.current.accept("artnet", packet.source, packet.universe, packet.sequence)) return;
         setPacketCount((count) => count + 1);
         setLastPacketSource("VizBridge · " + packet.source);
         const frame = fixtureFrameFromDmxPacket(packet, fixturesRef.current, "artnet");
@@ -488,6 +536,7 @@ export default function App() {
 
     const cleanup = await startArtNetReceiver(
       (packet) => {
+        if (!dmxSequenceGateRef.current.accept("artnet", packet.source, packet.universe, packet.sequence)) return;
         const frame = fixtureFrameFromDmxPacket(packet, fixturesRef.current, "artnet");
         setPacketCount((count) => count + 1);
         setMatchedFixtureCount(frame.fixtures.length);
@@ -502,11 +551,11 @@ export default function App() {
       },
       (status) => {
         if (status === "listening") {
-          setConnectionState("connected");
-          setConnectionMessage("AUTO LINK READY · UDP 6454 · waiting for LumaRig");
+          setConnectionState("connecting");
+          setConnectionMessage("ART-NET LISTENING · UDP 6454 · no packets received");
         } else if (status === "lumarig-handshake") {
-          setConnectionState("connected");
-          setConnectionMessage("LUMARIG ACKNOWLEDGED · UDP 6454");
+          setConnectionState("connecting");
+          setConnectionMessage("LUMARIG DISCOVERED · UDP 6454 · waiting for DMX packets");
         } else if (status === "stopped") {
           setConnectionState((current) => current === "error" ? current : "idle");
           setConnectionMessage((current) => current.includes("Could not bind") ? current : "Art-Net listener stopped");
@@ -527,6 +576,7 @@ export default function App() {
     const cleanup = await startSacnReceiver(
       patchedUniverses.length ? patchedUniverses : [1],
       (packet) => {
+        if (!dmxSequenceGateRef.current.accept("sacn", packet.source, packet.universe, packet.sequence)) return;
         setConnectionState("connected");
         setConnectionMessage("Receiving sACN · Universe " + packet.universe);
         setLastPacketSource(packet.source);
@@ -645,8 +695,8 @@ export default function App() {
 
     const connection = connectToLumaRig(lumaRigUrl, {
       onOpen: () => {
-        setConnectionState("connected");
-        setConnectionMessage("LumaRig Direct connected");
+        setConnectionState("connecting");
+        setConnectionMessage("LumaRig Direct socket open · waiting for valid data");
         setLastPacketSource(lumaRigUrl);
       },
       onSharedShowActivation: (value) => { if (!isSharedShowActivation(value)) return; setSharedShowRevision(value.revision); sharedShowRevisionRef.current=value.revision; setSharedShowName(value.showId); const location=value.locationId?LOCATION_PRESETS.find(item=>item.id===value.locationId):undefined; if (value.locationId&&location) loadLocation(value.locationId); connection.sendSharedShowAck({type:"shared-show.ack",protocol:"shared-show-v1",showId:value.showId,app:"lumaviz",revision:value.revision,state:value.locationId&&!location?"missing":"loaded",detail:value.locationId&&!location?"Location preset missing":"Venue loaded; outputs unchanged",timestamp:Date.now()}); setConnectionMessage(value.locationId&&!location?"Shared show loaded · venue preset missing":"Shared show loaded · outputs unchanged"); },
@@ -660,7 +710,7 @@ export default function App() {
         if (typeof snapshot.revision === "number") { setSharedShowRevision(snapshot.revision); sharedShowRevisionRef.current=snapshot.revision; }
         if (snapshot.show?.name) setSharedShowName(snapshot.show.name);
         if (snapshot.library) setSharedShowLibrary(snapshot.library);
-        if (snapshot.patch?.length) setFixtures((current) => snapshot.patch!.map((item) => {
+        if (Array.isArray(snapshot.patch)) setFixtures((current) => snapshot.patch!.map((item) => {
           const existing = current.find((fixture) => fixture.id === item.id);
           const profile = FIXTURE_PROFILES.find((candidate) => candidate.id === item.profileId);
           return { id:item.id, name:item.name, kind:profile?.kind ?? existing?.kind ?? "par", position:item.transform?.position ?? existing?.position ?? {x:0,y:2.7,z:1.5}, rotation:item.transform?.rotation ? {x:item.transform.rotation.pitch,y:item.transform.rotation.yaw,z:item.transform.rotation.roll} : existing?.rotation ?? {x:0,y:0,z:0}, patch:{enabled:true,universe:item.universe,address:item.address,profileId:item.profileId,modeId:item.modeId} };
@@ -751,47 +801,38 @@ export default function App() {
     const raw = localStorage.getItem("lumaviz.scene");
     if (!raw) return;
 
-    const saved = JSON.parse(raw) as {
-      dimensions?: SceneDimensions;
-      fixtures?: FixtureDefinition[];
-      objects?: SceneObject[];
-      material?: MaterialPreset;
-      activeView?: ViewPreset;
-      customCameras?: CustomCamera[];
-      activeCustomCameraId?: string | null;
-      displaySurfaces?: DisplaySurface[];
-      visualizerMode?: "3d" | "2d";
-      activeLocationId?: string;
-      sharedShowName?: string;
-      sharedShowRevision?: number;
-      stageSyncMode?: StageSyncMode;
-      stageRevision?: number;
-    };
-
-    if (saved.dimensions) setDimensions(saved.dimensions);
-    if (saved.fixtures) setFixtures(saved.fixtures);
-    if (saved.objects) setObjects(saved.objects);
-    if (saved.material) setMaterial(saved.material);
-    if (saved.activeView) setActiveView(saved.activeView);
-    if (saved.customCameras) setCustomCameras(saved.customCameras);
+    try {
+    const saved = parseSceneFile(raw);
+    resetCameraOnRebuild.current = true;
+    lastFrameRef.current = null;
+    setSelectedObjectId(null);
+    setStageChanges([]);
+    setDimensions(saved.dimensions ?? { ...DEFAULT_DIMENSIONS });
+    setFixtures(saved.fixtures ?? []);
+    setObjects(saved.objects ?? []);
+    setMaterial(saved.material ?? "production-dark");
+    setActiveView(saved.activeView ?? "foh");
+    setCustomCameras(saved.customCameras ?? []);
     setActiveCustomCameraId(saved.activeCustomCameraId ?? null);
-    if (saved.displaySurfaces) setDisplaySurfaces(saved.displaySurfaces);
-    if (saved.visualizerMode) setVisualizerMode(saved.visualizerMode);
+    setDisplaySurfaces(saved.displaySurfaces ?? []);
+    setVisualizerMode(saved.visualizerMode ?? "3d");
     setActiveLocationId(saved.activeLocationId ?? "");
-    if(saved.sharedShowName)setSharedShowName(saved.sharedShowName);
-    if(typeof saved.sharedShowRevision==="number"){ setSharedShowRevision(saved.sharedShowRevision); sharedShowRevisionRef.current=saved.sharedShowRevision; }
-    if(saved.stageSyncMode)setStageSyncMode(saved.stageSyncMode);
-    if(typeof saved.stageRevision==="number"){
-      setStageRevision(saved.stageRevision);
-      stageRevisionRef.current=saved.stageRevision;
-    }
+    setSharedShowName(saved.sharedShowName);
+    setSharedShowRevision(saved.sharedShowRevision);
+    sharedShowRevisionRef.current = saved.sharedShowRevision;
+    setStageSyncMode(saved.stageSyncMode);
+    setStageRevision(saved.stageRevision);
+    stageRevisionRef.current = saved.stageRevision;
 
     setSelected(null);
     setSceneVersion((value) => value + 1);
-    setConnectionMessage("Saved scene opened · outputs unchanged");
+    setConnectionMessage("Saved scene replaced current scene · outputs unchanged");
+    } catch (error) { setConnectionMessage(`Scene could not be opened: ${String(error)}`); }
   }
 
   function resetScene() {
+    resetCameraOnRebuild.current = true;
+    lastFrameRef.current = null;
     setDimensions({ ...DEFAULT_DIMENSIONS });
     setFixtures(cloneFixtures());
     setObjects(cloneObjects());

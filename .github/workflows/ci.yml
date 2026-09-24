@@ -46,5 +46,8 @@ jobs:
       - name: Frontend production build
         run: npm run build
 
+      - name: Startup bundle budget
+        run: npm run check:startup-bundle
+
       - name: Native tests
         run: cargo test --manifest-path src-tauri/Cargo.toml

@@ -11,7 +11,8 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "test:artnet-loopback": "node scripts/artnet-loopback-smoke.mjs"
+    "test:artnet-loopback": "node scripts/artnet-loopback-smoke.mjs",
+    "check:startup-bundle": "node scripts/check-startup-bundle.mjs"
   },
   "dependencies": {
     "@babylonjs/core": "^9.0.0",

@@ -9,13 +9,29 @@ export interface LumaRigConnection {
   close(): void;
 }
 
-function isFixtureFrame(value: unknown): value is FixtureFrame {
-  if (!value || typeof value !== "object") return false;
-  const frame = value as Partial<FixtureFrame>;
-  return frame.version === 1
-    && typeof frame.sequence === "number"
-    && typeof frame.timestamp === "number"
-    && Array.isArray(frame.fixtures);
+const record = (value: unknown): value is Record<string,unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+const unit = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+const optional = (value: unknown, valid: (value: unknown) => boolean) => value === undefined || valid(value);
+export function isFixtureFrame(value: unknown): value is FixtureFrame {
+  if (!record(value) || value.version !== 1 || !Number.isSafeInteger(value.sequence) || (value.sequence as number) < 0
+    || !Number.isSafeInteger(value.timestamp) || (value.timestamp as number) < 0 || !Array.isArray(value.fixtures) || value.fixtures.length > 8192
+    || !optional(value.showId, v => typeof v === 'string' && v.length <= 256)) return false;
+  const ids = new Set<string>();
+  for (const fixture of value.fixtures) {
+    if (!record(fixture) || typeof fixture.id !== 'string' || !fixture.id || fixture.id.length > 256 || ids.has(fixture.id)) return false;
+    ids.add(fixture.id);
+    if (!optional(fixture.universe, v => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 32767)
+      || !optional(fixture.address, v => Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 512)
+      || !optional(fixture.intensity, unit)
+      || !optional(fixture.color, v => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v))
+      || !optional(fixture.pan, v => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= 1440)
+      || !optional(fixture.tilt, v => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= 1440)
+      || !optional(fixture.beamAngle, v => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 360)
+      || !optional(fixture.strobeHz, v => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1000)
+      || !optional(fixture.capabilities, v => Array.isArray(v) && v.length <= 64 && v.every(k => typeof k === 'string' && k.length <= 64))
+      || !optional(fixture.emitters, v => record(v) && ['red','green','blue','white','amber','uv'].every(k => unit(v[k])))) return false;
+  }
+  return true;
 }
 
 export function connectToLumaRig(
@@ -59,7 +75,7 @@ export function connectToLumaRig(
         return;
       }
 
-            if (isFixtureFrame(message)) {
+      if (isFixtureFrame(message)) {
         handlers.onFrame(message);
         return;
       }
@@ -71,6 +87,7 @@ export function connectToLumaRig(
       ) {
         const frame = (message as { frame?: unknown }).frame;
         if (isFixtureFrame(frame)) handlers.onFrame(frame);
+        else handlers.onError?.("LumaRig sent an invalid fixture frame; visualization output was held.");
       }
     } catch (error) {
       handlers.onError?.(`Invalid LumaRig frame: ${String(error)}`);

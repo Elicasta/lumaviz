@@ -35,22 +35,23 @@ export function registerFixtureProfile(profile:FixtureProfile):FixtureProfile {
   return profile;
 }
 export function defaultMode(profile:FixtureProfile):FixtureMode { return profile.modes[0]; }
-export function findMode(profileId:string,modeId?:string):FixtureMode|undefined { const p=PROFILE_BY_ID.get(profileId); return p?.modes.find(m=>m.id===modeId)??p?.modes[0]; }
+export function findMode(profileId:string,modeId?:string):FixtureMode|undefined { const p=PROFILE_BY_ID.get(profileId); return modeId ? p?.modes.find(m=>m.id===modeId) : p?.modes[0]; }
 function byte(data:number[],address:number,offset:number){return data[address-1+offset]??0}
 function value(mode:FixtureMode,data:number[],address:number,p:FixtureParameter){const c=mode.channels.find(x=>x.parameter===p);return c?byte(data,address,c.offset):0}
 function word(mode:FixtureMode,data:number[],address:number,c:FixtureParameter,f:FixtureParameter){return (value(mode,data,address,c)<<8)|value(mode,data,address,f)}
 function hx(v:number){return Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,"0")}
 export function decodeFixture(profile:FixtureProfile,mode:FixtureMode,data:number[],address:number):Omit<FixtureState,"id">{
- const r=value(mode,data,address,"red"),g=value(mode,data,address,"green"),b=value(mode,data,address,"blue"),w=value(mode,data,address,"white"),a=value(mode,data,address,"amber"),uv=value(mode,data,address,"uv");
+ const has=(p:FixtureParameter)=>mode.channels.some(c=>c.parameter===p);
+ const r=has("red")?value(mode,data,address,"red"):255,g=has("green")?value(mode,data,address,"green"):255,b=has("blue")?value(mode,data,address,"blue"):255,w=value(mode,data,address,"white"),a=value(mode,data,address,"amber"),uv=value(mode,data,address,"uv");
  const hasDim=mode.channels.some(c=>c.parameter==="dimmer");
- const intensity=hasDim?value(mode,data,address,"dimmer")/255:Math.max(r,g,b,w,a,uv)/255;
+ const intensity=hasDim?value(mode,data,address,"dimmer")/255:1;
  const panFine=mode.channels.some(c=>c.parameter==="panFine"),tiltFine=mode.channels.some(c=>c.parameter==="tiltFine");
  const panRaw=panFine?word(mode,data,address,"pan","panFine"):value(mode,data,address,"pan")*257;
  const tiltRaw=tiltFine?word(mode,data,address,"tilt","tiltFine"):value(mode,data,address,"tilt")*257;
  const pan=mode.channels.some(c=>c.parameter==="pan")?(panRaw/65535)*(profile.movement?.panRangeDegrees??540)-(profile.movement?.panRangeDegrees??540)/2:undefined;
  const tilt=mode.channels.some(c=>c.parameter==="tilt")?(tiltRaw/65535)*(profile.movement?.tiltRangeDegrees??270)-(profile.movement?.tiltRangeDegrees??270)/2:undefined;
  const zoom=value(mode,data,address,"zoom")/255;
- const min=profile.optics?.beamAngleMinDegrees??18,max=profile.optics?.beamAngleMaxDegrees??profile.optics?.defaultBeamAngleDegrees??28;
- const beamAngle=mode.channels.some(c=>c.parameter==="zoom")?min+(max-min)*zoom:(profile.optics?.defaultBeamAngleDegrees??28);
- return {intensity,color:`#${hx(Math.min(255,r+w+a))}${hx(Math.min(255,g+w+a*.45))}${hx(Math.min(255,b+w+uv*.75))}`,emitters:{red:r/255,green:g/255,blue:b/255,white:w/255,amber:a/255,uv:uv/255},pan,tilt,beamAngle,strobeHz:value(mode,data,address,"strobe")/255*24,profileId:profile.id,modeId:mode.id,manufacturer:profile.manufacturer,model:profile.model,capabilities:mode.channels.flatMap(c=>c.parameter?[c.parameter]:[])};
+ const optics=profile.optics;
+ const beamAngle=optics ? (has("zoom") ? optics.beamAngleMinDegrees + (optics.beamAngleMaxDegrees-optics.beamAngleMinDegrees)*zoom : optics.defaultBeamAngleDegrees) : undefined;
+ return {intensity,color:`#${hx(r)}${hx(g)}${hx(b)}`,emitters:{red:r/255,green:g/255,blue:b/255,white:w/255,amber:a/255,uv:uv/255},pan,tilt,beamAngle,strobeHz:value(mode,data,address,"strobe")/255*20,profileId:profile.id,modeId:mode.id,manufacturer:profile.manufacturer,model:profile.model,capabilities:mode.channels.flatMap(c=>c.parameter?[c.parameter]:[])};
 }

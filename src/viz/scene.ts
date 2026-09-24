@@ -1,22 +1,21 @@
-import {
-  ArcRotateCamera,
-  Camera,
-  Color3,
-  Color4,
-  Engine,
-  GizmoManager,
-  HemisphericLight,
-  Mesh,
-  MeshBuilder,
-  PBRMaterial,
-  Scene,
-  SpotLight,
-  TransformNode,
-  Vector3,
-  VideoTexture,
-  Texture
-} from "@babylonjs/core";
-import "@babylonjs/loaders";
+import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { GizmoManager } from "@babylonjs/core/Gizmos/gizmoManager";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { VideoTexture } from "@babylonjs/core/Materials/Textures/videoTexture";
+import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
+import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder";
+import { CreateGround } from "@babylonjs/core/Meshes/Builders/groundBuilder";
+import { CreatePlane } from "@babylonjs/core/Meshes/Builders/planeBuilder";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { Scene } from "@babylonjs/core/scene";
 import { getCameraPose } from "./cameraPresets";
 import { createSceneMaterials } from "./materials";
 import type {
@@ -159,7 +158,7 @@ export class LumaVizScene {
     const m = createSceneMaterials(this.scene, materialPreset);
     const d = this.dimensions;
 
-    const floor = MeshBuilder.CreateGround("room-floor", {
+    const floor = CreateGround("room-floor", {
       width: d.roomWidth,
       height: d.roomDepth
     }, this.scene);
@@ -167,7 +166,7 @@ export class LumaVizScene {
     floor.material = m.floor;
     floor.receiveShadows = true;
 
-    const backWall = MeshBuilder.CreateBox("back-wall", {
+    const backWall = CreateBox("back-wall", {
       width: d.roomWidth,
       height: d.ceilingHeight,
       depth: 0.08
@@ -175,7 +174,7 @@ export class LumaVizScene {
     backWall.position.set(0, d.ceilingHeight / 2, d.stageDepth + 0.04);
     backWall.material = m.wall;
 
-    const leftWall = MeshBuilder.CreateBox("left-wall", {
+    const leftWall = CreateBox("left-wall", {
       width: 0.08,
       height: d.ceilingHeight,
       depth: d.roomDepth
@@ -190,7 +189,7 @@ export class LumaVizScene {
     const rightWall = leftWall.clone("right-wall");
     if (rightWall) rightWall.position.x = d.roomWidth / 2;
 
-    const stage = MeshBuilder.CreateBox("stage", {
+    const stage = CreateBox("stage", {
       width: d.stageWidth,
       height: d.stageHeight,
       depth: d.stageDepth
@@ -198,7 +197,7 @@ export class LumaVizScene {
     stage.position.set(0, d.stageHeight / 2, d.stageDepth / 2);
     stage.material = m.stage;
 
-    const drape = MeshBuilder.CreateBox("drape", {
+    const drape = CreateBox("drape", {
       width: d.drapeWidth,
       height: d.drapeHeight,
       depth: 0.14
@@ -211,7 +210,7 @@ export class LumaVizScene {
     drape.material = m.drape;
 
     if (!objects.some((object) => object.kind === "display")) {
-      const screen = MeshBuilder.CreatePlane("screen", {
+      const screen = CreatePlane("screen", {
         width: d.screenWidth,
         height: d.screenHeight,
         sideOrientation: Mesh.DOUBLESIDE
@@ -227,12 +226,12 @@ export class LumaVizScene {
 
     for (const object of objects) {
       const mesh = object.kind === "display"
-        ? MeshBuilder.CreatePlane(object.id, {
+        ? CreatePlane(object.id, {
             width: object.size.x,
             height: object.size.y,
             sideOrientation: Mesh.DOUBLESIDE
           }, this.scene)
-        : MeshBuilder.CreateBox(object.id, {
+        : CreateBox(object.id, {
             width: object.size.x,
             height: object.size.y,
             depth: object.size.z
@@ -277,7 +276,7 @@ export class LumaVizScene {
     let aimNode = panNode;
 
     if (definition.kind === "moving-head") {
-      const base = MeshBuilder.CreateCylinder(`${definition.id}-base`, {
+      const base = CreateCylinder(`${definition.id}-base`, {
         height: 0.2,
         diameter: 0.5,
         tessellation: 32
@@ -286,7 +285,7 @@ export class LumaVizScene {
       base.material = material;
       base.metadata = { fixtureId: definition.id };
 
-      const yokeLeft = MeshBuilder.CreateBox(`${definition.id}-yoke-l`, {
+      const yokeLeft = CreateBox(`${definition.id}-yoke-l`, {
         width: 0.1,
         height: 0.56,
         depth: 0.15
@@ -303,7 +302,7 @@ export class LumaVizScene {
       aimNode.position.y = 0.48;
       aimNode.parent = panNode;
 
-      const head = MeshBuilder.CreateBox(`${definition.id}-head`, {
+      const head = CreateBox(`${definition.id}-head`, {
         width: 0.46,
         height: 0.34,
         depth: 0.54
@@ -312,7 +311,7 @@ export class LumaVizScene {
       head.material = material;
       head.metadata = { fixtureId: definition.id };
     } else if (definition.kind === "bar") {
-      const body = MeshBuilder.CreateBox(`${definition.id}-bar`, {
+      const body = CreateBox(`${definition.id}-bar`, {
         width: 1.05,
         height: 0.14,
         depth: 0.18
@@ -321,7 +320,7 @@ export class LumaVizScene {
       body.material = material;
       body.metadata = { fixtureId: definition.id };
       for (let index = 0; index < 8; index += 1) {
-        const lens = MeshBuilder.CreateCylinder(`${definition.id}-lens-${index}`, {
+        const lens = CreateCylinder(`${definition.id}-lens-${index}`, {
           height: 0.02,
           diameter: 0.08,
           tessellation: 20
@@ -333,7 +332,7 @@ export class LumaVizScene {
         lens.metadata = { fixtureId: definition.id };
       }
     } else if (definition.kind === "blinder") {
-      const body = MeshBuilder.CreateBox(`${definition.id}-blinder`, {
+      const body = CreateBox(`${definition.id}-blinder`, {
         width: 0.7,
         height: 0.28,
         depth: 0.18
@@ -342,7 +341,7 @@ export class LumaVizScene {
       body.material = material;
       body.metadata = { fixtureId: definition.id };
     } else {
-      const can = MeshBuilder.CreateCylinder(`${definition.id}-can`, {
+      const can = CreateCylinder(`${definition.id}-can`, {
         height: 0.42,
         diameter: 0.34,
         tessellation: 28
@@ -363,7 +362,7 @@ export class LumaVizScene {
     const beamLength = 7;
     const beamAngle = 18;
     const radius = Math.tan((beamAngle * Math.PI / 180) / 2) * beamLength;
-    const beam = MeshBuilder.CreateCylinder(`${definition.id}-beam`, {
+    const beam = CreateCylinder(`${definition.id}-beam`, {
       height: beamLength,
       diameterTop: 0.06,
       diameterBottom: radius * 2,
